@@ -933,6 +933,10 @@ export function apply(ctx) {
         }
         const kinds = new Set(['pursue', 'delegate', 'scout', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request', 'play', 'pause'])
         if (kinds.has(body.kind) === false) { writeJson(res, 400, { ok: false, error: 'unknown-action' }); return }
+        // `source` names the surface that fired the action. The Tracks dialog
+        // ('dialog') is the management surface: its dismiss may close a board
+        // with open rows (operator 2026-09-07). The dock keeps the guard.
+        if (body.source !== undefined && body.source !== 'dialog') { writeJson(res, 400, { ok: false, error: 'invalid-action' }); return }
 
         const agent = ctx.agents.get(body.sessionId)
         if (agent === undefined) { writeJson(res, 409, { ok: false, error: 'session-offline' }); return }
@@ -945,7 +949,10 @@ export function apply(ctx) {
         // Operator rule 2026-08-28: a board with open rows cannot be dismissed —
         // tracks that are not 100% must never disappear. Whole-board dismiss is
         // only valid once every row is done (row-level dismiss stays available).
-        if (body.kind === 'dismiss' && Array.isArray(view?.rows) && view.rows.some((row) => row.percent < 100)) {
+        // EXCEPT from the Tracks dialog (operator 2026-09-07): the dialog is the
+        // management surface and may close any track.
+        if (body.kind === 'dismiss' && body.source !== 'dialog'
+          && Array.isArray(view?.rows) && view.rows.some((row) => row.percent < 100)) {
           writeJson(res, 400, { ok: false, error: 'board-dismiss-blocked: open rows remain — finish them or dismiss rows individually' })
           return
         }

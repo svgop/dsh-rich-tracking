@@ -1,6 +1,6 @@
 {
   "name": "dsh-rich-tracking",
-  "version": "0.4.7",
+  "version": "0.5.0",
   "description": "Percent-progress scoreboard for DeepSeek Harness: the tracking_write/tracking_checkpoint tools plus a docked board below the todo pill — rows with live percents derived from artifact truth, per-row record dialogs (long-form detail + clickable sources), checkpoints with host-captured git state, and pursue/delegate/scout/align operator actions that reach the agent as instructions.",
   "keywords": [
     "deepseek-harness",
@@ -58,6 +58,6 @@
     }
   },
   "scripts": {
-    "test": "node --test src/tracking-engine.test.mjs src/own-events.test.mjs src/tool-contract.test.mjs src/action-route.test.mjs src/lane-record.test.mjs src/session-log.test.mjs src/bundle-contract.test.mjs"
+    "test": "node --test src/tracking-engine.test.mjs src/own-events.test.mjs src/tool-contract.test.mjs src/action-route.test.mjs src/lane-record.test.mjs src/session-log.test.mjs src/bundle-contract.test.mjs src/dialog-route.test.mjs"
   }
 }

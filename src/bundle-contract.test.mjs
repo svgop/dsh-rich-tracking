@@ -66,3 +66,14 @@ test('every primitives reference in the client bundle is a real export', async (
     'an undefined component throws at render time and the slot renderer drops the whole entry (the v0.4.5 board-vanish crash)',
   )
 })
+
+test('the Tracks entry rides the sanctioned seams (no DOM graft)', () => {
+  const bundle = readFileSync(new URL('./client.bundle.js', import.meta.url), 'utf8')
+  assert.match(bundle, /ctx\.slots\.inject\("sidebar\.footer\.action"/, 'the Tracks entry must register through the sidebar.footer.action slot')
+  assert.match(bundle, /const inject = \["slots", "locale", "sessions"\]/, 'the bundle must inject the sessions service (offline wake + open)')
+  // The v0.4 graft hunted the sidebar DOM (logoRow) with MutationObservers.
+  // Code references must stay gone; comments may mention the history.
+  const code = bundle.split('\n').filter((line) => /^[ \t]*(\/\/|\*|\/\*)/.test(line) === false).join('\n')
+  assert.doesNotMatch(code, /logoRow/, 'no logoRow hunting in code')
+  assert.doesNotMatch(code, /new MutationObserver/, 'no MutationObserver grafts in code')
+})
