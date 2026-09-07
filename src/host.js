@@ -14,7 +14,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
@@ -46,6 +46,43 @@ function seedBoundary(session) {
  * `session.events` array this helper once read — with it gone the fallback
  * below saw an empty log and every board action folded an empty board);
  * the legacy slice keeps older harnesses working. */
+/**
+ * Per-session workspace record: after every tracking mutation the full
+ * folded board, checkpoint timeline, and decision log land at
+ * <workspace>/.dsh/tracking/<sessionId>.json — the project-local track
+ * record any agent or human reads with ordinary file tools (the session
+ * event log stays the durable source of truth; this file is its readable
+ * shadow). Best-effort: a write failure never blocks the mutation.
+ */
+function writeTrackingRecord(session) {
+  const cwd = session?.header?.cwd
+  if (typeof cwd !== 'string' || cwd === '') return
+  try {
+    const events = ownEvents(session)
+    let state = null
+    const checkpoints = []
+    const decisions = []
+    for (const event of events) {
+      if (event.type === 'tracking/checkpoint') checkpoints.push({ id: event.data.id, label: event.data.label, git: event.data.git, commitsSincePrior: event.data.commitsSincePrior, at: event.data.at })
+      else if (event.type === 'tracking/decision') decisions.push({ kind: event.data.kind, rowId: event.data.rowId ?? null, at: event.data.at })
+      state = foldTracking(state, event)
+    }
+    const view = boardView(state)
+    const record = {
+      v: 1,
+      sessionId: String(session.header?.id ?? 'unknown'),
+      workspace: cwd,
+      updatedAt: Date.now(),
+      ...(view !== null ? { board: view } : { present: false }),
+      checkpoints,
+      decisions,
+    }
+    const dir = join(cwd, '.dsh', 'tracking')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, record.sessionId + '.json'), JSON.stringify(record, null, 2) + String.fromCharCode(10), 'utf8')
+  } catch { /* best-effort shadow: the event log is the durable record */ }
+}
+
 function ownEvents(session) {
   if (typeof session?.ownEvents === 'function') return session.ownEvents()
   const events = Array.isArray(session?.events) ? session.events : []
@@ -479,6 +516,7 @@ function trackingWriteTool() {
       const lastCheckpoint = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const ahead = await commitsAheadOf(lastCheckpoint, gitState?.head ?? null, cwd)
       session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() })
+      writeTrackingRecord(session)
       // The echo is an ACKNOWLEDGEMENT, not a mirror: the model just sent the
       // whole board (items, evidence, up-to-4k details) seconds ago — echoing
       // it back costs that many tokens on every living-ledger write. One
@@ -557,6 +595,7 @@ function trackingCheckpointTool() {
       const commitsSincePrior = await commitsAheadOf(prior, gitState?.head ?? null, session.header?.cwd)
       const id = nextCheckpointId(ownEvents(session))
       session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() })
+      writeTrackingRecord(session)
       return { id, label, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
     },
     presentCall: (args) => ({ card: 'generic', title: 'Take tracking checkpoint', kind: 'other', rawInput: args.label ?? '' }),
@@ -913,6 +952,7 @@ export function apply(ctx) {
         }
 
         agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() })
+        writeTrackingRecord(agent.session)
 
         const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'scout' || body.kind === 'align' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
         if (whip === true) {
