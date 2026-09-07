@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { apply } from './host.js'
 
 test('tracking_write registers with the full gate contract in its description', () => {
@@ -34,4 +35,12 @@ test('tracking_write registers with the full gate contract in its description', 
     assert.ok(write.description.includes(fragment), `description must state: ${fragment}`)
   }
   assert.equal(/undefined|NaN|\[object /.test(write.description), false, 'description carries mangled artifacts')
+})
+
+test('the announcement names the workspace record lane (discovery contract)', () => {
+  const source = readFileSync(new URL('./host.js', import.meta.url), 'utf8')
+  const match = /const ANNOUNCEMENT = `([\s\S]*?)`/.exec(source)
+  assert.notEqual(match, null, 'ANNOUNCEMENT found')
+  assert.ok(match[1].includes('.dsh/tracking/<sessionId>.json'), 'announcement must point agents at the record lane')
+  assert.ok(match[1].includes("prior sessions' records"), 'announcement must tell agents prior records are readable there')
 })
