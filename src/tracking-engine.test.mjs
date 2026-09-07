@@ -284,7 +284,7 @@ test('refs: shape rules mirror sources — array, caps, non-empty, length', () =
 
 // ── v0.4: the scout brief (research fan-out) ────────────────────────────────
 
-test('researchContext: open-row roster, done rows excluded, scoped rowId, null when nothing to scout', () => {
+test('researchContext: ONE subagent queue — lane 1 launch prompt, remaining lanes as send_message payloads', () => {
   assert.equal(researchContext(null), null)
   let state = null
   state = foldTracking(state, {
@@ -293,6 +293,8 @@ test('researchContext: open-row roster, done rows excluded, scoped rowId, null w
       revision: 3,
       rows: [
         validRow({ percent: 40, note: 'mid-flight' }),
+        validRow({ id: 'w4-auth', label: 'W4 auth', percent: 10, note: 'not started', detail: 'existing detail' }),
+        validRow({ id: 'w5-bill', label: 'W5 billing', percent: 0 }),
         validRow({ id: 'w9', label: 'W9 done', percent: 100, evidence: 'qc: 5/5' }),
       ],
       note: null, git: null, commitsAhead: null, at: 1,
@@ -300,17 +302,30 @@ test('researchContext: open-row roster, done rows excluded, scoped rowId, null w
   })
   const view = boardView(state)
   const brief = researchContext(view)
-  assert.match(brief, /SCOUT FAN-OUT \(tracking board r3, 1 open row/)
-  assert.match(brief, /"W2 fleet rebuild" \(w2-fleet\): 40% active — basis: .* — note: mid-flight/)
+  // Single-subagent shape (operator 2026-09-07): no per-row fan-out.
+  assert.match(brief, /SCOUT \(tracking board r3, 3 open lane\(s\) — ONE subagent, sequential queue, NO fan-out\)/)
+  assert.match(brief, /Launch ONE continuable background subagent/)
+  assert.match(brief, /LANE 1 — the launch prompt/)
+  assert.match(brief, /LANES 2-3 — send_message payloads/)
+  assert.match(brief, /send_message \(one message per lane, in order\)/)
+  // Every lane payload is self-contained: each carries the research method.
+  assert.equal((brief.match(/TASK: study 3-6 competitors/g) ?? []).length, 3, 'all three lanes carry the full method')
+  assert.match(brief, /LANE 1 — RESEARCH ROW "W2 fleet rebuild" \(id "w2-fleet", 40%, active\)/)
+  assert.match(brief, /note: mid-flight|Latest note: mid-flight/)
+  assert.match(brief, /EXTEND it, do not discard it/, 'existing detail is preserved by instruction')
+  assert.match(brief, /LANE 2 — RESEARCH ROW "W4 auth"/)
+  assert.match(brief, /LANE 3 — RESEARCH ROW "W5 billing"/)
   assert.doesNotMatch(brief, /W9 done/, 'done rows are not scouted')
-  assert.match(brief, /3-6 competitors/)
+  // Fold-back contract names all three lanes of enrichment.
   assert.match(brief, /detail \(<= 4000 chars/)
-  assert.match(brief, /up to 12 links\/paths/)
+  assert.match(brief, /refs \(up to 12 EXTERNAL links/)
   assert.match(brief, /research is context, not progress/)
   assert.equal(researchContext(view, 'w9'), null, 'a done row has nothing to scout')
   const scoped = researchContext(view, 'w2-fleet')
-  assert.match(scoped, /this one row/)
-  assert.doesNotMatch(scoped, /W9 done/)
+  assert.match(scoped, /scoped to one row — ONE subagent/)
+  assert.match(scoped, /LANE 1 — RESEARCH ROW "W2 fleet rebuild"/)
+  assert.doesNotMatch(scoped, /W5 billing/, 'scoped scouting stays on the one row')
+  assert.doesNotMatch(scoped, /send_message payloads/, 'a single lane needs no queue')
   assert.equal(researchContext(view, 'missing-row'), null, 'an absent rowId scouts nothing')
   let done = null
   done = foldTracking(done, { type: 'tracking/write', data: { revision: 1, rows: [validRow({ percent: 100, evidence: 'x: 1/1' })], note: null, git: null, commitsAhead: null, at: 1 } })

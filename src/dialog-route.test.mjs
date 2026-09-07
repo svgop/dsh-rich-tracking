@@ -102,3 +102,23 @@ test('unknown source values are rejected, not silently ignored', async () => {
   assert.equal(res.status, 400)
   assert.equal(res.body.error, 'invalid-action')
 })
+
+test('scout delivers the ONE-subagent queue brief through the real route', async () => {
+  const rows = [
+    { id: 'r1', label: 'Lane one', percent: 20, status: 'active', evidence: 'x: 1/5' },
+    { id: 'r2', label: 'Lane two', percent: 0 },
+    { id: 'r3', label: 'Lane three', percent: 0 },
+  ]
+  const agent = makeAgent([boardEvent(rows)])
+  const handler = captureRoutes(agent)
+  const res = await call(handler, { sessionId: 'session-test', kind: 'scout' })
+  assert.equal(res.status, 200)
+  assert.equal(res.body.delivered, 'followup', 'scout lands as a followup on an idle agent')
+  const message = agent.followups[0]
+  const text = message.content.find((block) => block.type === 'text').text
+  assert.match(text, /ONE subagent, sequential queue, NO fan-out/)
+  assert.match(text, /Launch ONE continuable background subagent/)
+  assert.match(text, /LANES 2-3 — send_message payloads/)
+  assert.equal((text.match(/TASK: study 3-6 competitors/g) ?? []).length, 3, 'every lane payload is self-contained')
+  assert.match(text, /send_message \(one message per lane, in order\)/)
+})

@@ -368,13 +368,15 @@ export function ledgerContext(view) {
 }
 
 /**
- * The scout brief (pure, v0.4): the competitive-research fan-out the agent
- * acts on when the operator presses SCOUT — one background research subagent
- * per open row, each comparing 3-6 competitors, knowledge folded back
- * condensed into the rows' detail + sources. Done rows are excluded (they
- * need no competitive research); a rowId scopes the brief to that one row.
- * Returns null when there is nothing to scout: no live board, all rows done,
- * or a scoped rowId that is done or absent.
+ * The scout brief (pure): the competitive-research delegation the agent acts
+ * on when the operator presses SCOUT — ONE continuable background subagent
+ * (operator 2026-09-07: per-row fan-out is awkward at 10+ rows and invites
+ * rate limits). The first open row's fully self-contained brief is the
+ * LAUNCH prompt; every remaining row rides the same agent as a queued
+ * send_message payload — delivered naturally as it finishes each move.
+ * Done rows are excluded; a rowId scopes the brief to that one row.
+ * Returns null when there is nothing to scout: no live board, all rows
+ * done, or a scoped rowId that is done or absent.
  */
 export function researchContext(view, rowId) {
   if (view === null || view.present !== true) return null
@@ -383,15 +385,36 @@ export function researchContext(view, rowId) {
     ? view.rows.filter((row) => row.id === rowId && row.percent < 100)
     : view.rows.filter((row) => row.percent < 100)
   if (targets.length === 0) return null
-  const roster = targets.map((row) => {
+  // Each payload must stand entirely alone: a queued lane arrives as its own
+  // message, so it carries the full method, not a reference to lane 1.
+  const laneBrief = (row, lane, queued) => {
     const items = Array.isArray(row.items) && row.items.length > 0
-      ? ` — items: ${row.items.map((item) => `${item.done === true ? '[x]' : '[ ]'} ${item.label}`).join('; ')}`
+      ? `\nAcceptance items (done/open): ${row.items.map((item) => `${item.done === true ? '[x]' : '[ ]'} ${item.label}`).join('; ')}`
       : ''
-    const basis = row.evidence !== undefined ? ` — basis: ${row.evidence}` : ''
-    const note = row.note !== undefined ? ` — note: ${row.note}` : ''
-    const status = row.status ?? deriveStatus(row.percent)
-    return `- "${row.label}" (${row.id}): ${row.percent}% ${status}${items}${basis}${note}`
-  }).join('\n')
-  const scope = scoped ? 'this one row' : 'each open row'
-  return `SCOUT FAN-OUT (tracking board r${view.revision}, ${targets.length} open row(s) to research):\n${roster}\n\nThe operator pressed SCOUT: they want competitive knowledge folded into the board before more work happens. For ${scope}, delegate one background research subagent (your subagent tool, run_in_background) with a self-contained brief: study 3-6 competitors or comparable implementations for exactly this row's problem — what each does differently, its approach, its key tradeoff, and what it got right that we have not — and return the findings CONDENSED (digests, not walls of text). Keep working while they run; fold each report in as it lands. Then call tracking_write and enrich every researched row: detail (<= ${LIMITS.maxDetail} chars — the row's full record: what is done, what remains, and now the competitive picture with the decisive tradeoffs) and sources (up to ${LIMITS.maxSources} links/paths — competitor docs, your written digests, receipts; write durable digests to .docs/digest/ or .docs/research/ first, research that is not written down did not happen). Bump a row's percent ONLY if artifact truth actually changed — research is context, not progress.`
+    const basis = row.evidence !== undefined ? `\nEvidence basis so far: ${row.evidence}` : ''
+    const note = row.note !== undefined ? `\nLatest note: ${row.note}` : ''
+    const detailHint = row.detail !== undefined ? `\nCurrent detail (${row.detail.length} chars) already on the row — EXTEND it, do not discard it.` : ''
+    const ordering = queued === true
+      ? '\nThis is one lane of a queued sequence: if you are still mid-task on an earlier lane, finish or cleanly wrap that lane first, then work THIS one — lanes are processed one at a time, in order.'
+      : ''
+    return `LANE ${lane} — RESEARCH ROW "${row.label}" (id "${row.id}", ${row.percent}%, ${row.status ?? deriveStatus(row.percent)})${items}${basis}${note}${detailHint}${ordering}
+TASK: study 3-6 competitors or comparable implementations for exactly this row's problem — what each does differently, its approach, its key tradeoff, and what it got right that we have not. Write the findings as a CONDENSED durable digest under .docs/digest/ or .docs/research/ (digests, not walls of text — research that is not written down did not happen), then return the condensed findings plus the digest path and the key external links.`
+  }
+  const method = (lane) => laneBrief(lane.row, lane.index, lane.index > 1)
+  const lanes = targets.map((row, index) => ({ row, index: index + 1 }))
+  const header = `SCOUT (tracking board r${view.revision}, ${targets.length} open lane(s) — ONE subagent, sequential queue, NO fan-out):
+The operator pressed SCOUT: they want competitive knowledge folded into the board before more work happens. Execute exactly this delegation shape:
+1. Launch ONE continuable background subagent (your subagent tool, run_in_background) with LANE 1 below verbatim as its prompt.
+2. Immediately after launching, deliver EVERY remaining lane to the SAME agent with send_message (one message per lane, in order) — the messages land in its inbox in FIFO order and it takes each lane as it finishes the one before (a message may also arrive mid-move; every queued payload tells the researcher to wrap the current lane first); slower than parallel children, but no rate-limit pressure and one coherent researcher throughout. Each lane payload below is self-contained — send it verbatim.
+3. Keep working while the researcher grinds the queue; fold each lane's report in as it lands.
+Then call tracking_write and enrich every researched row: detail (<= ${LIMITS.maxDetail} chars — the row's full record: what is done, what remains, and now the competitive picture with the decisive tradeoffs), sources (up to ${LIMITS.maxSources} internal links/paths — your written digests, receipts), and refs (up to ${LIMITS.maxRefs} EXTERNAL links — the competitor/dependency pages that justify the direction). Bump a row's percent ONLY if artifact truth actually changed — research is context, not progress.
+
+================ LANE 1 — the launch prompt (subagent tool, run_in_background) ================
+${method(lanes[0])}${lanes.length > 1 ? `\n\n================ LANES 2-${lanes.length} — send_message payloads, in order, same agent ================\n${lanes.slice(1).map((lane) => `-------- send_message payload (lane ${lane.index}) --------\n${method(lane)}`).join('\n\n')}` : ''}`
+  return scoped ? `SCOUT (tracking board r${view.revision}, scoped to one row — ONE subagent):
+The operator pressed SCOUT on a single row. Launch ONE background research subagent (your subagent tool, run_in_background) with the brief below verbatim; no other lanes are in scope.
+
+${method(lanes[0])}
+
+Then call tracking_write and enrich the researched row: detail (<= ${LIMITS.maxDetail} chars), sources (up to ${LIMITS.maxSources} internal digests/receipts), refs (up to ${LIMITS.maxRefs} EXTERNAL competitor/dependency links). Bump the percent ONLY if artifact truth actually changed.` : header
 }
