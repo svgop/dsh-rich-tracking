@@ -890,9 +890,25 @@ export function apply(ctx) {
           writeJson(res, 400, { ok: false, error: 'board-dismiss-blocked: open rows remain — finish them or dismiss rows individually' })
           return
         }
+        // Closing a row is idempotent intent: a row absent from this
+        // session's own fold (already closed, id rewritten by a later
+        // tracking_write, or rendered from a fork-inherited board the
+        // projection shows but this session does not own) is success, not
+        // failure. Record the decision so the fold and the client chip
+        // reflect it; nothing to instruct the agent to omit.
+        if (body.kind === 'dismiss-row' && view?.rows.find((entry) => entry.id === body.rowId) === undefined) {
+          agent.session.append('tracking/decision', { kind: 'dismiss-row', rowId: body.rowId ?? null, instruction: `row "${String(body.rowId)}" is already absent from this session's board — nothing to omit`, at: Date.now() })
+          writeJson(res, 200, { ok: true, delivered: 'row-already-absent' })
+          return
+        }
         const instruction = instructionFor(body.kind, view, body.rowId)
         if (instruction === null) {
-          writeJson(res, 400, { ok: false, error: body.kind === 'scout' ? 'nothing-to-scout: every row is done (or the scoped row is) — research is for open rows' : 'row-not-found' })
+          // A forked session's dock can render the PARENT's board (the
+          // projection folds the inherited prefix); this session's own fold
+          // owns no such row. Name that case instead of a bare miss.
+          const inherited = view === null && ownEvents(agent.session).length === 0 && seedBoundary(agent.session) > 0
+            ? " this session inherited its board from its fork parent — act on the parent session's board, or write this session's own board first." : ''
+          writeJson(res, 400, { ok: false, error: body.kind === 'scout' ? `nothing-to-scout: every row is done (or the scoped row is) — research is for open rows.${inherited}` : `row-not-found: no row "${String(body.rowId)}" in this session's live board.${inherited}` })
           return
         }
 
