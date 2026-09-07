@@ -119,7 +119,7 @@ test('items: valid checklist passes through and drives percent cross-check', () 
 test('items: shape rules — non-empty array, boolean done, label cap, count cap', () => {
   assert.equal(validateBoard({ rows: [validRow({ items: [] })] }).ok, false)
   assert.equal(validateBoard({ rows: [validRow({ percent: 50, evidence: 'x', items: [{ label: 'a', done: true }, { label: 'b' }] })] }).ok, false)
-  assert.equal(validateBoard({ rows: [validRow({ percent: 100, evidence: 'x', items: [{ label: 'x'.repeat(121), done: true }] })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ percent: 100, evidence: 'x', items: [{ label: 'x'.repeat(241), done: true }] })] }).ok, false)
   assert.equal(validateBoard({
     rows: [validRow({
       percent: 100, evidence: 'x',
@@ -330,4 +330,35 @@ test('researchContext: ONE subagent queue — lane 1 launch prompt, remaining la
   let done = null
   done = foldTracking(done, { type: 'tracking/write', data: { revision: 1, rows: [validRow({ percent: 100, evidence: 'x: 1/1' })], note: null, git: null, commitsAhead: null, at: 1 } })
   assert.equal(researchContext(boardView(done)), null, 'an all-done board has nothing to scout')
+})
+
+test('raised limits (operator 2026-09-07): note 400, board note 400, item label 240 — and the old walls reject', () => {
+  // The exact walls, one char over each new cap.
+  assert.equal(validateBoard({ rows: [validRow({ note: 'n'.repeat(401) })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ note: 'n'.repeat(400) })] }).ok, true)
+  assert.equal(validateBoard({ rows: [validRow()], note: 'b'.repeat(401) }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow()], note: 'b'.repeat(400) }).ok, true)
+  const longItem = { label: 'l'.repeat(241), done: true }
+  assert.equal(validateBoard({ rows: [validRow({ percent: 100, evidence: 'x: 1/1', items: [longItem] })] }).ok, false)
+  assert.equal(validateBoard({ rows: [validRow({ percent: 100, evidence: 'x: 1/1', items: [{ label: 'l'.repeat(240), done: true }] })] }).ok, true)
+  // Message text teaches the new caps.
+  const check = validateBoard({ rows: [validRow({ note: 'n'.repeat(401) })] })
+  assert.match(check.errors[0], /<= 400/)
+})
+
+test('checkpoint fold carries summary/expect (the prediction-verification pair)', () => {
+  let state = null
+  state = foldTracking(state, { type: 'tracking/write', data: { revision: 1, rows: [validRow()], note: null, git: null, commitsAhead: null, at: 1 } })
+  state = foldTracking(state, {
+    type: 'tracking/checkpoint',
+    data: { id: 'cp-1', label: 'wave 2 pinned', summary: 'w2 fleet rebuilt and green', expect: 'w2 at 100% and qc 11/11', git: null, rows: [], at: 2 },
+  })
+  const cp = boardView(state).lastCheckpoint
+  assert.equal(cp.summary, 'w2 fleet rebuilt and green')
+  assert.equal(cp.expect, 'w2 at 100% and qc 11/11')
+  // Legacy checkpoints without the pair stay null-shaped.
+  state = foldTracking(state, { type: 'tracking/checkpoint', data: { id: 'cp-2', label: null, git: null, rows: [], at: 3 } })
+  const legacy = boardView(state).lastCheckpoint
+  assert.equal(legacy.summary, null)
+  assert.equal(legacy.expect, null)
 })

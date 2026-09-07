@@ -26,7 +26,9 @@ test('tracking_write registers with the full gate contract in its description', 
   // validateBoard without landing here, this test fails on purpose.
   for (const fragment of [
     'RULES THE GATE ENFORCES',
-    'TOP-LEVEL note <= 200',
+    'TOP-LEVEL note <= 400',
+    'row.note <= 400 chars',
+    'label <= 240',
     'REQUIRES row.evidence',
     'round(done/total x 100)',
     'blocked requires percent < 100',
@@ -36,6 +38,19 @@ test('tracking_write registers with the full gate contract in its description', 
     assert.ok(write.description.includes(fragment), `description must state: ${fragment}`)
   }
   assert.equal(/undefined|NaN|\[object /.test(write.description), false, 'description carries mangled artifacts')
+
+  // The checkpoint contract (2026-09-07): prediction pins, not bare snapshots.
+  const checkpoint = tools.find((t) => t.name === 'tracking_checkpoint')
+  assert.notEqual(checkpoint, undefined, 'tracking_checkpoint registered')
+  for (const fragment of [
+    'RULES THE GATE ENFORCES',
+    'summary <= 300 chars',
+    'expect <= 200 chars',
+    'checkpoints audit their predecessor',
+    'PRIOR expectation',
+  ]) {
+    assert.ok(checkpoint.description.includes(fragment), `checkpoint description must state: ${fragment}`)
+  }
 })
 
 test('the announcement names the workspace record lane (discovery contract)', () => {

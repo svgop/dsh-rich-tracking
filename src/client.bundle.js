@@ -104,6 +104,7 @@ window.__ModuleLoader__.load({
 			"checkpoint.title": "checkpoint",
 			"checkpoint.since": "since checkpoint",
 			"checkpoint.commits": "commits",
+		"checkpoint.expectNext": "expected next",
 			"checkpoint.gitUnavailable": "git state unavailable",
 			"checkpoint.dirty": "dirty",
 			"checkpoint.clean": "clean",
@@ -187,6 +188,7 @@ window.__ModuleLoader__.load({
 			"checkpoint.title": "检查点",
 			"checkpoint.since": "自检查点以来",
 			"checkpoint.commits": "个提交",
+		"checkpoint.expectNext": "下一检查点应达成",
 			"checkpoint.gitUnavailable": "git 状态不可用",
 			"checkpoint.dirty": "处未提交",
 			"checkpoint.clean": "干净",
@@ -491,10 +493,18 @@ window.__ModuleLoader__.load({
 			const since = view.sinceCheckpoint;
 			if (cp === undefined) return null;
 			const before = view.overallPercent - (since?.percentDelta ?? 0);
+			// The checkpoint's own words ride the tooltip: the milestone
+			// summary and the falsifiable expectation the next checkpoint
+			// must close on (the prediction-verification loop, host-pinned).
+			const tip = [
+				cp.summary !== null && cp.summary !== undefined ? cp.summary : null,
+				cp.expect !== null && cp.expect !== undefined ? `\u2192 ${t("checkpoint.expectNext")}: ${cp.expect}` : null,
+			].filter((part) => part !== null).join("\n");
 			return (0, react_jsx_runtime.jsx)("div", {
 				className: "rt-checkpoint",
 				children: (0, react_jsx_runtime.jsx)("span", {
 					className: "rt-cpLine",
+					title: tip === "" ? undefined : tip,
 					children: `${cp.label !== null && cp.label !== undefined ? `"${cp.label}"` : t("checkpoint.title")} \u00b7 ${new Date(cp.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} \u00b7 ${cp.git !== null && cp.git !== undefined ? `${cp.git.branch}@${cp.git.head.slice(0, 7)}${cp.git.dirtyCount > 0 ? ` \u00b7 ${cp.git.dirtyCount} ${t("checkpoint.dirty")}` : ""}` : t("checkpoint.gitUnavailable")} \u00b7 ${t("checkpoint.since")}: ${since?.commitsAhead !== null && since?.commitsAhead !== undefined ? `+${since.commitsAhead} ${t("checkpoint.commits")} \u00b7 ` : ""}${before}% \u2192 ${view.overallPercent}%`
 				})
 			});

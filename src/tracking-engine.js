@@ -16,19 +16,23 @@
  *  - boardView(state)       — the client-visible wire view (design §7.2).
  */
 
-/** Size/shape limits for model-authored boards (design §6.1). */
+/** Size/shape limits for model-authored boards (design §6.1).
+ * Note/item-label caps were raised 2026-09-07 (operator: preserve more
+ * context — 200/120 truncated useful status prose mid-sentence). */
 export const LIMITS = {
   maxRows: 12,
   minRows: 1,
   guidanceRows: '3-7',
   maxIdLength: 24,
   maxLabel: 80,
-  maxNote: 200,
+  maxNote: 400,
   maxEvidence: 300,
   maxItems: 20,
-  maxItemLabel: 120,
-  maxBoardNote: 200,
+  maxItemLabel: 240,
+  maxBoardNote: 400,
   maxCheckpointLabel: 60,
+  maxCheckpointSummary: 300,
+  maxCheckpointExpect: 200,
   maxDetail: 4000,
   maxSources: 12,
   maxSourceLength: 300,
@@ -246,7 +250,7 @@ export function foldTracking(state, event) {
   if (event.type === 'tracking/checkpoint') {
     if (state === null) return state
     const data = event.data
-    return { ...state, lastCheckpoint: { id: data.id, label: data.label ?? null, git: data.git ?? null, rows: data.rows, at: data.at } }
+    return { ...state, lastCheckpoint: { id: data.id, label: data.label ?? null, summary: data.summary ?? null, expect: data.expect ?? null, git: data.git ?? null, rows: data.rows, at: data.at } }
   }
   if (event.type === 'tracking/decision') {
     if (state === null) return state

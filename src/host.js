@@ -17,7 +17,7 @@ import { execFile } from 'node:child_process'
 import { readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
+import { LIMITS, boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
 
 const API_PREFIX = '/api/rich-tracking'
 /** Refresh cadence (design §10.2, operator-decided v1): 8 assistant steps OR 6k output tokens since the last write. */
@@ -350,8 +350,8 @@ const TRACKING_EVENT_TYPES = Object.freeze([
 const ANNOUNCEMENT = `dsh-rich-tracking (progress scoreboard): the macro percent board the operator watches below the todo pill. todo_write is the micro plan for the CURRENT turn (it resets every turn); tracking_write is the MISSION scoreboard — waves, milestones, multi-turn objectives — surviving across turns until every row is 100 or the operator dismisses the board. Create one when the operator asks for a scoreboard/waves/tracking, or the work visibly spans many turns; map rows to the plan's real workstreams (3-7 ideal, 12 max).
 Write contract (the tracking_write description carries the full rules): whole-board replace every call; percent = artifact truth — acceptance items holding now / total, never impression; evidence required at percent >= 1; items checklists must add up to the percent. A percent without evidence is a fabrication; the operator reads the board as a lie detector.
 Cadence — living ledger: tracking_write after EVERY completed task, step, or todo whose artifact truth changed (refreshed percents and item flags), and refresh the row prose (note, evidence, items, detail) whenever the underlying details shift. The board describes current reality, not a milestone snapshot.
-Checkpoints: when the operator says "take a checkpoint", call tracking_checkpoint — the HOST captures git branch/HEAD/dirty plus the frozen board; never type git facts yourself.
-Operator actions land as instructions naming the row: PURSUE (make it the next focus), ALIGN (re-derive every percent from the named artifacts before writing again), DELEGATE (hand the row to a background subagent with a self-contained brief; it tracks its own board in its session; fold its receipts back into the row), SCOUT (ONE continuable background research subagent for ALL open rows: lane 1 is the launch prompt, every further row is queued to the SAME agent with send_message — it works the queue lane by lane as it finishes each move, so 10+ rows never spawn 10+ parallel children or rate limits; findings CONDENSED into durable digests .docs/digest/ .docs/research/, then rows enriched with detail + sources + refs; research is context, not progress: bump a percent only when artifact truth actually changed).
+Checkpoints are prediction pins, not snapshots: when the operator says "take a checkpoint" (or a milestone lands — wave closed, risky migration started), call tracking_checkpoint with label + summary (what this moment represents) + expect (the falsifiable claim that will be true by the NEXT checkpoint — artifact-verifiable, never a hope). The HOST captures git branch/HEAD/dirty plus the frozen board; never type git facts yourself. Each checkpoint's result echoes the PRIOR expectation — your summary must close on it: held, missed, or drifted, and why. That loop is what makes the since-checkpoint deltas in the UI mean something.
+Operator actions land as instructions naming the row: PURSUE (make it the next focus), ALIGN (a VERIFICATION AUDIT: open every row's evidence artifacts, recompute percent from what holds today — correcting DOWN as readily as up — refresh evidence strings, prune dead rows, add missing ones, and land the audit verdict in the board note: survived/corrected/dropped/added/unreadable), DELEGATE (hand the row to a background subagent with a self-contained brief; it tracks its own board in its session; fold its receipts back into the row), SCOUT (ONE continuable background research subagent for ALL open rows: lane 1 is the launch prompt, every further row is queued to the SAME agent with send_message — it works the queue lane by lane as it finishes each move, so 10+ rows never spawn 10+ parallel children or rate limits; findings CONDENSED into durable digests .docs/digest/ .docs/research/, then rows enriched with detail + sources + refs; research is context, not progress: bump a percent only when artifact truth actually changed).
 Row records: rows may carry detail — a long-form record (<= 4000 chars: what is done, what remains, key decisions, scouted knowledge) the operator reads in the row's "?" dialog — sources (up to 12 reference links/paths, clickable there) and refs (up to 12 EXTERNAL references — competitor pages, dependency/RFC docs, prior art — the outside material proving WHY a direction was chosen; internal receipts belong in sources, refs are the decision's external proof). The note stays the one-line status; the detail narrates the row. Keep all current.
 Track record: every mutation also lands at <workspace>/.dsh/tracking/<sessionId>.json (full board, checkpoints, decisions); prior sessions' records sit beside it — read them with file tools when resuming work or reconstructing project history.
 /track: the operator's forced ledger sync — it injects the full ledger plus this doctrine; re-derive from artifacts, correct the board, then continue. While a board is live, every user submit carries a compact board reminder; do not recite it to the user.`
@@ -433,7 +433,7 @@ function trackingWriteTool() {
       label: { type: 'string', description: 'Row name shown on the board, <= 80 chars.' },
       percent: { type: 'integer', minimum: 0, maximum: 100, description: 'Artifact-derived completion percent: (acceptance items that hold now) / (total) in the row evidence artifacts.' },
       status: { type: 'string', enum: ['pending', 'active', 'blocked', 'done'], description: "Optional. Derived when omitted: 100->done, >0->active, 0->pending. 'blocked' requires a note naming the concrete blocker." },
-      note: { type: 'string', description: '<= 200 chars: what changed since the last write, or the blocker.' },
+      note: { type: 'string', description: '<= 400 chars: what changed since the last write, or the blocker.' },
       evidence: { type: 'string', description: "<= 300 chars: the artifact basis — owning plan/receipt paths plus checked/total (e.g. '.docs/GOAL.md W2 snapshot + .docs/qc/: 9/14 receipts'). REQUIRED when percent >= 1." },
       items: {
         type: 'array',
@@ -445,7 +445,7 @@ function trackingWriteTool() {
           required: ['label', 'done'],
           additionalProperties: false,
           properties: {
-            label: { type: 'string', description: 'One acceptance item, <= 120 chars (e.g. "engine tests green").' },
+            label: { type: 'string', description: 'One acceptance item, <= 240 chars (e.g. "engine tests green").' },
             done: { type: 'boolean', description: 'True when this item holds right now.' },
           },
         },
@@ -472,7 +472,7 @@ function trackingWriteTool() {
     name: 'tracking_write',
     description: [
       'Record and update the session percent-progress scoreboard (the macro board the operator watches above the chat input; todo_write stays the micro plan for the current turn). Send the ENTIRE board every call — it REPLACES the previous board.',
-      'RULES THE GATE ENFORCES (all violations return together — fix every listed row in one pass): rows 1-12 (aim 3-7); row.id a unique stable ascii slug <= 24 chars (kept across writes so checkpoints and actions can reference it); row.label <= 80 chars; row.percent an integer 0-100; percent >= 1 REQUIRES row.evidence (<= 300 chars: owning plan/receipt paths + checked/total); percent 100 means done (status auto-derives; declaring done requires 100, and 100 requires done); blocked requires percent < 100 AND a row note naming the concrete blocker; row.note <= 200 chars; row.items when present a 1-20 array of {label <= 120, done} whose math MUST equal the percent (round(done/total x 100)); row.detail <= 4000 chars; row.sources 1-12 strings <= 300 chars (internal receipts/code/digests); row.refs 1-12 EXTERNAL reference strings <= 300 chars (competitor/dependency/RFC docs proving the direction — outside material only, internal paths belong in sources); the TOP-LEVEL note <= 200 chars (what this write changed) — omit it rather than exceeding it.',
+      'RULES THE GATE ENFORCES (all violations return together — fix every listed row in one pass): rows 1-12 (aim 3-7); row.id a unique stable ascii slug <= 24 chars (kept across writes so checkpoints and actions can reference it); row.label <= 80 chars; row.percent an integer 0-100; percent >= 1 REQUIRES row.evidence (<= 300 chars: owning plan/receipt paths + checked/total); percent 100 means done (status auto-derives; declaring done requires 100, and 100 requires done); blocked requires percent < 100 AND a row note naming the concrete blocker; row.note <= 400 chars (what changed since the last write, or the blocker); row.items when present a 1-20 array of {label <= 240, done} whose math MUST equal the percent (round(done/total x 100)); row.detail <= 4000 chars; row.sources 1-12 strings <= 300 chars (internal receipts/code/digests); row.refs 1-12 EXTERNAL reference strings <= 300 chars (competitor/dependency/RFC docs proving the direction — outside material only, internal paths belong in sources); the TOP-LEVEL note <= 400 chars (what this write changed — or, after an ALIGN, the audit verdict) — omit it rather than exceeding it.',
       'percent is derived from artifact truth — the fraction of the row acceptance items (plan checkboxes, landed receipts, verified boxes) that hold right now, never an impression. Overall completion is item-weighted: each item one unit, itemless rows contribute their percent as one unit. items render as the expandable acceptance checklist; detail and sources fill the operator question dialog — keep them current. Calling this after a dismissal re-opens the board.',
     ].join(' '),
     parameters: {
@@ -481,7 +481,7 @@ function trackingWriteTool() {
       additionalProperties: false,
       properties: {
         rows: { type: 'array', minItems: 1, maxItems: 12, items: rowSchema },
-        note: { type: 'string', description: '<= 200 chars board-level note (what this write changed).' },
+        note: { type: 'string', description: '<= 400 chars board-level note (what this write changed; after an ALIGN, the audit verdict).' },
       },
     },
     output: {
@@ -564,27 +564,39 @@ function trackingWriteTool() {
   }
 }
 
-/** The tracking_checkpoint tool (design §6.2). */
+/** The tracking_checkpoint tool (design §6.2, upgraded 2026-09-07: a
+ * checkpoint is a prediction-verification pin, not a bare snapshot — the
+ * agent narrates the milestone and states a falsifiable expectation for the
+ * NEXT checkpoint, and the next result closes the loop on the last one). */
 function trackingCheckpointTool() {
   return {
     name: 'tracking_checkpoint',
-    description: "Snapshot the current moment as a tracking checkpoint: the host captures git branch, HEAD, and a dirty-state summary plus the board's current rows, and the board UI shows before/after progress evidence. Call it when the operator asks to 'take a checkpoint' / 'checkpoint', or at a milestone worth before/after evidence (a wave closing, a big migration starting). Returns the checkpoint id (cp-<n>).",
+    description: [
+      "Pin a milestone as a tracking checkpoint: the HOST captures git branch/HEAD/dirty-state plus the board's current rows, and YOUR summary + expectation turn the pin into a prediction the next checkpoint verifies. Call it when the operator asks to 'take a checkpoint' / 'checkpoint', or at any milestone worth before/after evidence (a wave closing, a risky migration starting, a hypothesis about to be tested).",
+      'RULES THE GATE ENFORCES: label <= 60 chars (short milestone name); summary <= 300 chars (what THIS moment represents — what just shipped/decided/verified, in your words); expect <= 200 chars (what should be TRUE by the next checkpoint — a falsifiable claim like "w2 at 100% and qc 11/11", not a hope). When the result echoes a PRIOR expectation, your summary MUST state whether it held, missed, or drifted and why — checkpoints audit their predecessor.',
+    ].join(' '),
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
         label: { type: 'string', description: "Optional short milestone name (<= 60 chars), e.g. 'eu02 rebuild pinned'." },
+        summary: { type: 'string', description: "Optional but expected (<= 300 chars): what this checkpoint represents — what just shipped, was decided, or was verified, and (when the result carries a prior expectation) whether that prediction held, missed, or drifted." },
+        expect: { type: 'string', description: "Optional but expected (<= 200 chars): the falsifiable claim that should be true by the NEXT checkpoint (artifact-verifiable — percents, receipts, test counts), so the next checkpoint audits it." },
       },
     },
     output: {
       // Same register contract as tracking_write: the mandatory result schema
-      // (probeGitFull's shape: branch/head plus bounded dirty-state summary).
+      // (probeGitFull's shape: branch/head plus bounded dirty-state summary,
+      // plus the prior expectation this checkpoint must close on).
       schema: {
         type: 'object',
         required: ['id', 'label', 'git', 'boardPercent', 'rows'],
         properties: {
           id: { type: 'string' },
           label: { oneOf: [{ type: 'null' }, { type: 'string' }] },
+          summary: { oneOf: [{ type: 'null' }, { type: 'string' }] },
+          expect: { oneOf: [{ type: 'null' }, { type: 'string' }] },
+          priorExpectation: { oneOf: [{ type: 'null' }, { type: 'string' }] },
           git: {
             oneOf: [
               { type: 'null' },
@@ -607,22 +619,24 @@ function trackingCheckpointTool() {
       render: (_args, value) => [{
         type: 'text',
         text: value.git !== null
-          ? `Checkpoint ${value.id}${value.label !== null ? ` (${value.label})` : ''} @ ${value.git.branch}@${value.git.head.slice(0, 7)}${value.git.dirtyCount > 0 ? ` (${value.git.dirtyCount} dirty)` : ' (clean)'} — board ${value.boardPercent}%`
-          : `Checkpoint ${value.id}${value.label !== null ? ` (${value.label})` : ''} (git state unavailable) — board ${value.boardPercent}%`,
+          ? `Checkpoint ${value.id}${value.label !== null ? ` (${value.label})` : ''} @ ${value.git.branch}@${value.git.head.slice(0, 7)}${value.git.dirtyCount > 0 ? ` (${value.git.dirtyCount} dirty)` : ' (clean)'} — board ${value.boardPercent}%${value.priorExpectation !== null && value.priorExpectation !== undefined ? ` — PRIOR EXPECTATION to close on: "${value.priorExpectation}"` : ''}`
+          : `Checkpoint ${value.id}${value.label !== null ? ` (${value.label})` : ''} (git state unavailable) — board ${value.boardPercent}%${value.priorExpectation !== null && value.priorExpectation !== undefined ? ` — PRIOR EXPECTATION to close on: "${value.priorExpectation}"` : ''}`,
       }],
     },
     async execute(args, exec) {
       if (exec.agent === undefined) throw new TrackingError('tracking_checkpoint requires an owning agent session', 'TRACKING_NO_AGENT')
       const session = exec.agent.session
-      const label = typeof args.label === 'string' && args.label.trim() !== '' ? args.label.trim().slice(0, 60) : null
+      const label = typeof args.label === 'string' && args.label.trim() !== '' ? args.label.trim().slice(0, LIMITS.maxCheckpointLabel) : null
+      const summary = typeof args.summary === 'string' && args.summary.trim() !== '' ? args.summary.trim().slice(0, LIMITS.maxCheckpointSummary) : null
+      const expect = typeof args.expect === 'string' && args.expect.trim() !== '' ? args.expect.trim().slice(0, LIMITS.maxCheckpointExpect) : null
       const gitState = await probeGitFull(session.header?.cwd)
       const rows = lastTrackingEvent(ownEvents(session), 'tracking/write')?.data.rows ?? []
       const prior = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
       const commitsSincePrior = await commitsAheadOf(prior, gitState?.head ?? null, session.header?.cwd)
       const id = nextCheckpointId(ownEvents(session))
-      session.append('tracking/checkpoint', { id, label, git: gitState, rows, commitsSincePrior, at: Date.now() })
+      session.append('tracking/checkpoint', { id, label, summary, expect, git: gitState, rows, commitsSincePrior, at: Date.now() })
       writeTrackingRecord(session)
-      return { id, label, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
+      return { id, label, summary, expect, priorExpectation: typeof prior?.expect === 'string' && prior.expect !== '' ? prior.expect : null, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
     },
     presentCall: (args) => ({ card: 'generic', title: 'Take tracking checkpoint', kind: 'other', rawInput: args.label ?? '' }),
   }
@@ -652,10 +666,18 @@ function instructionFor(kind, view, rowId) {
   }
   if (kind === 'align') {
     const scoped = rowId !== undefined && rowId !== null ? ` on row "${view?.rows.find((entry) => entry.id === rowId)?.label ?? rowId}"` : ''
-    return `[rich-tracking | align] The operator pressed ALIGN${scoped}. Re-derive the board from artifact truth: read each row's evidence artifacts (plan snapshots, receipts, acceptance boxes), recompute percent as checked/total — never from impression — then call tracking_write with the corrected rows and re-align your todo_write list to the remaining work. Drop rows whose owning artifacts prove them obsolete; add rows the plan owns but the board misses.`
+    const prior = view?.revision ?? '?'
+    return `[rich-tracking | align] The operator pressed ALIGN${scoped} — this is a VERIFICATION AUDIT of board r${prior}, not a refresh. Protocol, in order:
+1. OPEN the artifacts: for every row in scope, read the exact evidence artifacts its evidence string names (plan snapshots, receipts, acceptance boxes, test outputs). A row you did not re-open is a row you did not verify — "it looked right" is the failure mode this audit exists to catch.
+2. RECOMPUTE each percent as artifacts-holding-now / total, and re-derive every items flag from what the artifacts show TODAY. Where the recomputed number differs from the board, the board was wrong — correct it downward as readily as upward (an inflated row silently corrected is the audit working, not a failure).
+3. REFRESH the row evidence strings to the fresh artifact state (paths + current checked/total) and the notes to what actually changed since the last write.
+4. PRUNE AND OWN: drop rows whose owning artifacts prove them obsolete (name them); add rows the plan/receipts own but the board is missing.
+5. VERDICT — the write's TOP-LEVEL note must be the audit result a human can act on: "align r${prior}->r<N>: <k>/<total> rows survived unchanged; corrected <id from%->to% (why)>; dropped <ids>; added <ids>; unreadable <ids>". If everything survived, still write it: "align r${prior}: all rows verified against artifacts" plus any refreshed evidence.
+Then re-align your todo_write list to the remaining work. Unreadable or missing artifacts are findings to REPORT in the verdict, never a reason to keep an unverified percent.`
   }
   if (kind === 'checkpoint-request') {
-    return '[rich-tracking | checkpoint] The operator requested a checkpoint. Call tracking_checkpoint now (a short label naming the milestone when one fits), then continue the current work.'
+    const priorExpect = view?.lastCheckpoint?.expect ?? null
+    return `[rich-tracking | checkpoint] The operator requested a checkpoint. Call tracking_checkpoint NOW with all three fields: label (short milestone name), summary (what this moment represents — and${priorExpect !== null ? `, REQUIRED, whether the PRIOR expectation "${priorExpect}" held, missed, or drifted` : ' what you predict comes next'}), and expect (the falsifiable claim that will be true by the NEXT checkpoint — artifact-verifiable: percents, receipts, test counts, not hopes). The host pins git + the frozen board; your prediction is what makes the next checkpoint's delta mean something. Then continue the current work.`
   }
   if (kind === 'dismiss-row') {
     const row = view?.rows.find((entry) => entry.id === rowId)

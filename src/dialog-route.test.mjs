@@ -122,3 +122,31 @@ test('scout delivers the ONE-subagent queue brief through the real route', async
   assert.equal((text.match(/TASK: study 3-6 competitors/g) ?? []).length, 3, 'every lane payload is self-contained')
   assert.match(text, /send_message \(one message per lane, in order\)/)
 })
+
+test('align instruction is the audit protocol with a required verdict', async () => {
+  const agent = makeAgent([boardEvent([openRow])])
+  const handler = captureRoutes(agent)
+  const res = await call(handler, { sessionId: 'session-test', kind: 'align' })
+  assert.equal(res.status, 200)
+  const text = agent.followups[0].content.find((block) => block.type === 'text').text
+  assert.match(text, /VERIFICATION AUDIT of board r1/)
+  assert.match(text, /OPEN the artifacts/)
+  assert.match(text, /correct it downward as readily as upward/)
+  assert.match(text, /VERDICT/)
+  assert.match(text, /survived unchanged/)
+  assert.match(text, /Unreadable or missing artifacts are findings to REPORT/)
+})
+
+test('checkpoint-request instruction echoes the prior expectation for closure', async () => {
+  let state = null
+  const writeEvent = boardEvent([openRow])
+  const checkpointEvent = { type: 'tracking/checkpoint', seq: 2, at: 2, data: { id: 'cp-1', label: 'prior', summary: 'earlier moment', expect: 'w2 at 80%', git: null, rows: [], at: 2 } }
+  const agent = makeAgent([writeEvent, checkpointEvent])
+  const handler = captureRoutes(agent)
+  const res = await call(handler, { sessionId: 'session-test', kind: 'checkpoint-request' })
+  assert.equal(res.status, 200)
+  const text = agent.followups[0].content.find((block) => block.type === 'text').text
+  assert.match(text, /Call tracking_checkpoint NOW with all three fields/)
+  assert.match(text, /PRIOR expectation "w2 at 80%" held, missed, or drifted/)
+  assert.match(text, /falsifiable claim/)
+})
