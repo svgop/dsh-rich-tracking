@@ -93,6 +93,7 @@ window.__ModuleLoader__.load({
 			"action.play": "Play — auto-engage highest-value work after each turn",
 			"action.pause": "Pause — stop auto-engaging",
 			"action.checkpoint.hint": "Ask the agent to take a tracking checkpoint now (host captures git + board).",
+			"checkpoint.title": "checkpoint",
 			"checkpoint.since": "since checkpoint",
 			"checkpoint.commits": "commits",
 			"checkpoint.expand": "Show frozen snapshot",
@@ -100,6 +101,9 @@ window.__ModuleLoader__.load({
 			"checkpoint.gitUnavailable": "git state unavailable",
 			"checkpoint.dirty": "dirty",
 			"checkpoint.clean": "clean",
+			"completed.toggle": "Completed",
+			"completed.toggleHint": "Rows that reached 100% — kept as the project record",
+			"completed.empty": "nothing yet",
 			"status.delivered": "delivered",
 			"status.steer": "lands at the next step boundary",
 			"status.followup": "opens a new turn",
@@ -168,6 +172,7 @@ window.__ModuleLoader__.load({
 			"action.play": "播放——每回合自动推进最高价值工作",
 			"action.pause": "暂停——停止自动推进",
 			"action.checkpoint.hint": "让 agent 现在就打一个进度检查点（宿主抓取 git + 看板）。",
+			"checkpoint.title": "检查点",
 			"checkpoint.since": "自检查点以来",
 			"checkpoint.commits": "个提交",
 			"checkpoint.expand": "展开冻结快照",
@@ -175,6 +180,9 @@ window.__ModuleLoader__.load({
 			"checkpoint.gitUnavailable": "git 状态不可用",
 			"checkpoint.dirty": "处未提交",
 			"checkpoint.clean": "干净",
+			"completed.toggle": "已完成",
+			"completed.toggleHint": "达到 100% 的行——作为项目记录保留",
+			"completed.empty": "暂无",
 			"status.delivered": "已送达",
 			"status.steer": "将在下一步边界生效",
 			"status.followup": "开启新回合",
@@ -261,6 +269,15 @@ window.__ModuleLoader__.load({
 .rt-frozen{background:var(--dsw-alias-markdown-code-block);padding:2px 0 6px;display:flex;flex-direction:column}
 .rt-frozenRow{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;display:flex;justify-content:space-between;gap:10px;padding:4px 12px}
 .rt-frozenRow + .rt-frozenRow{border-top:1px solid var(--dsw-alias-border-l1)}
+.rt-completed{border-top:1px solid var(--dsw-alias-border-l1);padding:0;display:flex;flex-direction:column}
+.rt-completedHead{display:flex;align-items:center;gap:6px;width:100%;background:0 0;border:none;cursor:pointer;padding:4px 12px;font:inherit;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);text-align:left}
+.rt-completedHead:hover{color:var(--dsw-alias-label-secondary)}
+.rt-completedCount{color:var(--dsw-alias-state-success-primary)}
+.rt-completedList{background:var(--dsw-alias-markdown-code-block);padding:2px 0 6px;display:flex;flex-direction:column}
+.rt-completedRow{display:flex;align-items:center;gap:6px;padding:3px 12px}
+.rt-completedLabel{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-completedRow .rt-iconBtn{visibility:hidden}
+.rt-completedRow:hover .rt-iconBtn,.rt-completedRow:focus-within .rt-iconBtn{visibility:visible}
 .rt-status{min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;padding:0 12px}
 .rt-statusOk{color:var(--dsw-alias-state-success-primary)}
 .rt-statusError{color:var(--dsw-alias-state-error-primary)}
@@ -407,14 +424,16 @@ window.__ModuleLoader__.load({
 							}) : null
 						]
 					}),
-					hasItems === true ? (0, react_jsx_runtime.jsx)("span", {
-						className: "rt-rowChevron",
-						"aria-hidden": "true",
-						children: open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {})
-					}) : null,
 					(0, react_jsx_runtime.jsxs)("span", {
 						className: "rt-rowActions",
 						children: [
+							hasItems === true ? (0, react_jsx_runtime.jsx)(ActionButton, {
+								label: open === true ? t("row.collapse") : t("row.expand"),
+								hint: open === true ? t("row.collapse") : t("row.expand"),
+								disabled: false,
+								onClick: toggle,
+								children: open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {})
+							}) : null,
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("row.record.open"),
 								hint: t("row.record.hint"),
@@ -461,18 +480,13 @@ window.__ModuleLoader__.load({
 			const cp = view.lastCheckpoint;
 			const since = view.sinceCheckpoint;
 			if (cp === undefined) return null;
-			const deltas = since?.rowDeltas?.map((delta) => `${delta.label} ${delta.from}%\u2192${delta.to}%`).join(" \u00b7 ") ?? "";
 			const before = view.overallPercent - (since?.percentDelta ?? 0);
 			return (0, react_jsx_runtime.jsxs)("div", {
 				className: "rt-checkpoint",
 				children: [
 					(0, react_jsx_runtime.jsx)("span", {
 						className: "rt-cpLine",
-						children: `checkpoint ${cp.id}${cp.label !== null && cp.label !== undefined ? ` \u00b7 "${cp.label}"` : ""} \u00b7 ${new Date(cp.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} \u00b7 ${cp.git !== null && cp.git !== undefined ? `${cp.git.branch}@${cp.git.head.slice(0, 7)} (${cp.git.dirtyCount > 0 ? `${cp.git.dirtyCount} ${t("checkpoint.dirty")}` : t("checkpoint.clean")})` : t("checkpoint.gitUnavailable")}`
-					}),
-					(0, react_jsx_runtime.jsx)("span", {
-						className: "rt-cpSince",
-						children: `${t("checkpoint.since")}: ${since?.commitsAhead !== null && since?.commitsAhead !== undefined ? `+${since.commitsAhead} ${t("checkpoint.commits")} \u00b7 ` : ""}overall ${before}% \u2192 ${view.overallPercent}%${deltas === "" ? "" : ` \u00b7 ${deltas}`}`
+						children: `${cp.label !== null && cp.label !== undefined ? `"${cp.label}"` : t("checkpoint.title")} \u00b7 ${new Date(cp.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} \u00b7 ${cp.git !== null && cp.git !== undefined ? `${cp.git.branch}@${cp.git.head.slice(0, 7)}${cp.git.dirtyCount > 0 ? ` \u00b7 ${cp.git.dirtyCount} ${t("checkpoint.dirty")}` : ""}` : t("checkpoint.gitUnavailable")} \u00b7 ${t("checkpoint.since")}: ${since?.commitsAhead !== null && since?.commitsAhead !== undefined ? `+${since.commitsAhead} ${t("checkpoint.commits")} \u00b7 ` : ""}${before}% \u2192 ${view.overallPercent}%`
 					}),
 					(0, react_jsx_runtime.jsx)("button", {
 						type: "button",
@@ -483,6 +497,52 @@ window.__ModuleLoader__.load({
 					showFrozen ? (0, react_jsx_runtime.jsx)("div", {
 						className: "rt-frozen",
 						children: cp.rows.map((row) => (0, react_jsx_runtime.jsxs)("span", { className: "rt-frozenRow", children: [(0, react_jsx_runtime.jsx)("span", { children: row.label }), (0, react_jsx_runtime.jsx)("span", { children: `${row.percent}%` })] }, row.id))
+					}) : null
+				]
+			});
+		}
+		/**
+		 * The completed partition: rows at 100% leave the live list the moment
+		 * they land (the agent moving a row to 100 IS the auto-close — no
+		 * manual step), folding into this collapsed record. Expanding shows
+		 * one compact line per completed row (label only — the frozen record
+		 * keeps everything else); hover offers dismiss for the rare manual
+		 * removal. The strip stays out of the way until there is history.
+		 */
+		function CompletedStrip({ rows, busy, onAction, t }) {
+			const [open, setOpen] = (0, react.useState)(false);
+			if (rows.length === 0) return null;
+			return (0, react_jsx_runtime.jsxs)("div", {
+				className: "rt-completed",
+				children: [
+					(0, react_jsx_runtime.jsxs)("button", {
+						type: "button",
+						className: "rt-completedHead",
+						"aria-expanded": open,
+						"aria-label": `${t("completed.toggle")} — ${rows.length}`,
+						onClick: () => setOpen((value) => !value),
+						children: [
+							open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {}),
+							(0, react_jsx_runtime.jsx)("span", { className: "rt-completedCount", children: `${rows.length} ${t("completed.toggle")}` }),
+							(0, react_jsx_runtime.jsx)("span", { children: t("completed.toggleHint") })
+						]
+					}),
+					open === true ? (0, react_jsx_runtime.jsx)("div", {
+						className: "rt-completedList",
+						children: rows.map((row) => (0, react_jsx_runtime.jsxs)("span", {
+							className: "rt-completedRow",
+							children: [
+								(0, react_jsx_runtime.jsx)(CompletedGlyph, {}),
+								(0, react_jsx_runtime.jsx)("span", { className: "rt-completedLabel", title: row.label, children: row.label }),
+								(0, react_jsx_runtime.jsx)(ActionButton, {
+									label: t("action.dismiss"),
+									hint: t("action.dismissRow.hint"),
+									disabled: busy,
+									onClick: () => onAction("dismiss-row", row.id),
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline14, {})
+								})
+							]
+						}, row.id))
 					}) : null
 				]
 			});
@@ -748,8 +808,9 @@ window.__ModuleLoader__.load({
 							className: "rt-list",
 							role: "region",
 							"aria-label": t("title"),
-							children: view.rows.map((row) => (0, react_jsx_runtime.jsx)(BoardRow, { row, busy: busy !== null, onAction: act, onRecord: setRecordRow, t }, row.id))
+							children: view.rows.filter((row) => row.percent < 100).map((row) => (0, react_jsx_runtime.jsx)(BoardRow, { row, busy: busy !== null, onAction: act, onRecord: setRecordRow, t }, row.id))
 						}) : null,
+						expanded ? (0, react_jsx_runtime.jsx)(CompletedStrip, { rows: view.rows.filter((row) => row.percent === 100), busy: busy !== null, onAction: act, t }) : null,
 						expanded && view.lastCheckpoint !== undefined ? (0, react_jsx_runtime.jsx)(CheckpointStrip, { view, t }) : null,
 						error !== null ? (0, react_jsx_runtime.jsx)("span", {
 							className: "rt-status rt-statusError",
