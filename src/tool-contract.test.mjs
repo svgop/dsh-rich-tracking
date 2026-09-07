@@ -31,6 +31,7 @@ test('tracking_write registers with the full gate contract in its description', 
     'round(done/total x 100)',
     'blocked requires percent < 100',
     'REPLACES the previous board',
+    'row.refs 1-12 EXTERNAL reference strings <= 300 chars',
   ]) {
     assert.ok(write.description.includes(fragment), `description must state: ${fragment}`)
   }

@@ -32,6 +32,8 @@ export const LIMITS = {
   maxDetail: 4000,
   maxSources: 12,
   maxSourceLength: 300,
+  maxRefs: 12,
+  maxRefLength: 300,
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
@@ -137,6 +139,24 @@ export function validateBoard(raw) {
         })
       }
     }
+    // External refs (v0.5): OUTSIDE material that proves the decision or
+    // direction — competitor pages, dependency/RFC docs, prior art. Internal
+    // artifacts (receipts, code paths, own digests) belong in sources; refs
+    // are how the operator audits WHY a direction was chosen, not just what
+    // was done.
+    if (row.refs !== undefined) {
+      if (Array.isArray(row.refs) === false || row.refs.length === 0) {
+        fail(`${where}.refs must be a non-empty array (1-${LIMITS.maxRefs}) of external reference strings when provided`)
+      } else if (row.refs.length > LIMITS.maxRefs) {
+        fail(`${where}.refs has ${row.refs.length} entries (limit ${LIMITS.maxRefs})`)
+      } else {
+        row.refs.forEach((ref, refIndex) => {
+          const at = `${where}.refs[${refIndex}]`
+          if (typeof ref !== 'string' || ref.trim() === '') fail(`${at} must be a non-empty string (URL or citation of external docs)`)
+          else if (ref.length > LIMITS.maxRefLength) fail(`${at} exceeds ${LIMITS.maxRefLength} characters`)
+        })
+      }
+    }
     // Status consistency (design §6.1 rule 3).
     if (typeof row.percent === 'number' && Number.isInteger(row.percent)) {
       const effective = deriveStatus(row.percent, row.status)
@@ -165,6 +185,7 @@ export function validateBoard(raw) {
       : {}),
     ...(row.detail !== undefined && row.detail !== '' ? { detail: row.detail } : {}),
     ...(Array.isArray(row.sources) && row.sources.length > 0 ? { sources: [...row.sources] } : {}),
+    ...(Array.isArray(row.refs) && row.refs.length > 0 ? { refs: [...row.refs] } : {}),
   }))
   return { ok: true, board: { rows: clean, note: typeof raw.note === 'string' && raw.note !== '' ? raw.note : null } }
 }
@@ -339,8 +360,9 @@ export function ledgerContext(view) {
     // the size, not the text.
     const detail = row.detail !== undefined ? ` — detail: ${row.detail.length} chars` : ''
     const sources = Array.isArray(row.sources) && row.sources.length > 0 ? ` — sources: ${row.sources.length}` : ''
+    const refs = Array.isArray(row.refs) && row.refs.length > 0 ? ` — refs: ${row.refs.length}` : ''
     const status = row.status ?? deriveStatus(row.percent)
-    return `- ${row.label} (${row.id}): ${row.percent}% ${status}${items}${basis}${note}${detail}${sources}`
+    return `- ${row.label} (${row.id}): ${row.percent}% ${status}${items}${basis}${note}${detail}${sources}${refs}`
   }).join('\n')
   return `TRACKING LEDGER (revision r${view.revision}, overall ${view.overallPercent}%, ${view.doneCount}/${view.rows.length} rows done):\n${rows}\n\nRe-derive this ledger now: read the artifacts each row names (documentation, code, receipts, user context), recompute percent as checked/total — never from impression — fix any stale items or prose (labels, notes, evidence must describe current reality), then call tracking_write with the corrected board. Afterward keep the ledger living: update percents and item flags after every completed step, and refresh the prose whenever the underlying details change.`
 }

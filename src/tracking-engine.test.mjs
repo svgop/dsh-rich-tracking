@@ -259,6 +259,29 @@ test('ledgerContext: detail and sources appear as bounded presence markers', () 
   assert.doesNotMatch(text, /dddd/, 'the detail TEXT stays out of the injected ledger')
 })
 
+test('refs: external references pass through, ride the wire view, and mark the ledger', () => {
+  const refs = ['https://convex.dev/docs/http-endpoints', 'RFC 7231 §6.5.9 — 409 Conflict semantics', 'https://github.com/vercel/next.js/pull/72977']
+  const check = validateBoard({ rows: [validRow({ refs })] })
+  assert.equal(check.ok, true)
+  assert.deepEqual(check.board.rows[0].refs, refs)
+  let state = null
+  state = foldTracking(state, { type: 'tracking/write', data: { revision: 1, rows: check.board.rows, note: null, git: null, commitsAhead: null, at: 1 } })
+  const view = boardView(state)
+  assert.deepEqual(view.rows[0].refs, refs, 'refs ride the wire view to the record dialog')
+  assert.match(ledgerContext(view), /— refs: 3/)
+})
+
+test('refs: shape rules mirror sources — array, caps, non-empty, length', () => {
+  assert.equal(validateBoard({ rows: [validRow({ refs: [] })] }).ok, false, 'empty array rejected')
+  assert.match(validateBoard({ rows: [validRow({ refs: [] })] }).errors[0], /rows\[0\]\.refs must be a non-empty array/)
+  assert.equal(validateBoard({ rows: [validRow({ refs: Array.from({ length: 13 }, () => 'r') })] }).ok, false, '13 refs rejected (limit 12)')
+  assert.match(validateBoard({ rows: [validRow({ refs: Array.from({ length: 13 }, () => 'r') })] }).errors[0], /limit 12/)
+  assert.equal(validateBoard({ rows: [validRow({ refs: ['https://a', '  '] })] }).ok, false, 'blank entry rejected')
+  assert.equal(validateBoard({ rows: [validRow({ refs: ['x'.repeat(301)] })] }).ok, false, '301 chars rejected')
+  assert.match(validateBoard({ rows: [validRow({ refs: ['x'.repeat(301)] })] }).errors[0], /exceeds 300 characters/)
+  assert.equal(validateBoard({ rows: [validRow({ refs: 'https://a' })] }).ok, false, 'bare string rejected')
+})
+
 // ── v0.4: the scout brief (research fan-out) ────────────────────────────────
 
 test('researchContext: open-row roster, done rows excluded, scoped rowId, null when nothing to scout', () => {

@@ -83,6 +83,7 @@ window.__ModuleLoader__.load({
 		"record.detail": "Detail",
 		"record.items": "Acceptance items",
 		"record.sources": "Sources",
+		"record.refs": "External refs — why this direction",
 		"record.empty": "No detail yet — press Scout, or ask the agent to fill this row's context.",
 		"action.scout": "Scout",
 		"action.scout.hint": "Fan out research subagents — one per open row, each comparing 3-6 competitors — and fold the condensed knowledge back into the rows as detail and sources.",
@@ -103,8 +104,6 @@ window.__ModuleLoader__.load({
 			"checkpoint.title": "checkpoint",
 			"checkpoint.since": "since checkpoint",
 			"checkpoint.commits": "commits",
-			"checkpoint.expand": "Show frozen snapshot",
-			"checkpoint.collapse": "Hide frozen snapshot",
 			"checkpoint.gitUnavailable": "git state unavailable",
 			"checkpoint.dirty": "dirty",
 			"checkpoint.clean": "clean",
@@ -167,6 +166,7 @@ window.__ModuleLoader__.load({
 		"record.detail": "详情",
 		"record.items": "验收条目",
 		"record.sources": "来源",
+		"record.refs": "外部参考——方向依据",
 		"record.empty": "还没有详情——按调研，或让 agent 填充该行的上下文。",
 		"action.scout": "调研",
 		"action.scout.hint": "派出调研子代理——每个未完成行一个，各对比 3-6 家竞品——把浓缩后的知识以详情与来源回填到行上。",
@@ -187,8 +187,6 @@ window.__ModuleLoader__.load({
 			"checkpoint.title": "检查点",
 			"checkpoint.since": "自检查点以来",
 			"checkpoint.commits": "个提交",
-			"checkpoint.expand": "展开冻结快照",
-			"checkpoint.collapse": "收起冻结快照",
 			"checkpoint.gitUnavailable": "git 状态不可用",
 			"checkpoint.dirty": "处未提交",
 			"checkpoint.clean": "干净",
@@ -274,13 +272,6 @@ window.__ModuleLoader__.load({
 .rt-rowEvidence{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere;opacity:.85}
 .rt-checkpoint{border-top:1px solid var(--dsw-alias-border-l1);padding:0;display:flex;flex-direction:column}
 .rt-cpLine{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:16px;overflow-wrap:anywhere;padding:8px 12px 0}
-.rt-cpSince{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere;padding:2px 12px 0}
-.rt-cpToggle{color:var(--dsw-alias-state-business-primary);cursor:pointer;background:0 0;border:none;font-size:12px;line-height:16px;padding:4px 12px;justify-content:flex-start;width:100%;text-align:left}
-.rt-cpToggle:hover{text-decoration:underline}
-.rt-cpToggle:hover{text-decoration:underline}
-.rt-frozen{background:var(--dsw-alias-markdown-code-block);padding:2px 0 6px;display:flex;flex-direction:column}
-.rt-frozenRow{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:17px;display:flex;justify-content:space-between;gap:10px;padding:4px 12px}
-.rt-frozenRow + .rt-frozenRow{border-top:1px solid var(--dsw-alias-border-l1)}
 .rt-completed{border-top:1px solid var(--dsw-alias-border-l1);padding:0;display:flex;flex-direction:column}
 .rt-completedHead{display:flex;align-items:center;gap:6px;width:100%;background:0 0;border:none;cursor:pointer;padding:4px 12px;font:inherit;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);text-align:left}
 .rt-completedHead:hover{color:var(--dsw-alias-label-secondary)}
@@ -304,6 +295,7 @@ window.__ModuleLoader__.load({
 .rt-recordMeta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px}
 .rt-recordSection{display:flex;flex-direction:column;gap:3px}
 .rt-recordLabel{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;text-transform:uppercase;letter-spacing:.05em}
+.rt-recordLabel svg{vertical-align:-2px;margin-right:2px}
 .rt-recordText{color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:17px;overflow-wrap:anywhere}
 .rt-recordMd{color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:18px;overflow-wrap:anywhere}
 .rt-recordEmpty{color:var(--dsw-alias-label-caption);font-size:12.5px;line-height:17px;font-style:italic}
@@ -486,31 +478,25 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
-		/** The checkpoint strip: frozen git truth + since-checkpoint deltas, expandable to the full snapshot. */
+		/**
+		 * The checkpoint strip: one line of frozen git truth + the
+		 * since-checkpoint delta. The frozen row snapshot itself stays in the
+		 * durable record (.dsh/tracking/<sessionId>.json carries the full
+		 * checkpoint timeline) — the operator 2026-09-07 read is the line,
+		 * not a restatement of every row percent (operator: "the frozen
+		 * snapshot row seems unnecessary").
+		 */
 		function CheckpointStrip({ view, t }) {
-			const [showFrozen, setShowFrozen] = (0, react.useState)(false);
 			const cp = view.lastCheckpoint;
 			const since = view.sinceCheckpoint;
 			if (cp === undefined) return null;
 			const before = view.overallPercent - (since?.percentDelta ?? 0);
-			return (0, react_jsx_runtime.jsxs)("div", {
+			return (0, react_jsx_runtime.jsx)("div", {
 				className: "rt-checkpoint",
-				children: [
-					(0, react_jsx_runtime.jsx)("span", {
-						className: "rt-cpLine",
-						children: `${cp.label !== null && cp.label !== undefined ? `"${cp.label}"` : t("checkpoint.title")} \u00b7 ${new Date(cp.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} \u00b7 ${cp.git !== null && cp.git !== undefined ? `${cp.git.branch}@${cp.git.head.slice(0, 7)}${cp.git.dirtyCount > 0 ? ` \u00b7 ${cp.git.dirtyCount} ${t("checkpoint.dirty")}` : ""}` : t("checkpoint.gitUnavailable")} \u00b7 ${t("checkpoint.since")}: ${since?.commitsAhead !== null && since?.commitsAhead !== undefined ? `+${since.commitsAhead} ${t("checkpoint.commits")} \u00b7 ` : ""}${before}% \u2192 ${view.overallPercent}%`
-					}),
-					(0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "rt-cpToggle",
-						onClick: () => setShowFrozen((value) => !value),
-						children: showFrozen ? t("checkpoint.collapse") : t("checkpoint.expand")
-					}),
-					showFrozen ? (0, react_jsx_runtime.jsx)("div", {
-						className: "rt-frozen",
-						children: cp.rows.map((row) => (0, react_jsx_runtime.jsxs)("span", { className: "rt-frozenRow", children: [(0, react_jsx_runtime.jsx)("span", { children: row.label }), (0, react_jsx_runtime.jsx)("span", { children: `${row.percent}%` })] }, row.id))
-					}) : null
-				]
+				children: (0, react_jsx_runtime.jsx)("span", {
+					className: "rt-cpLine",
+					children: `${cp.label !== null && cp.label !== undefined ? `"${cp.label}"` : t("checkpoint.title")} \u00b7 ${new Date(cp.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} \u00b7 ${cp.git !== null && cp.git !== undefined ? `${cp.git.branch}@${cp.git.head.slice(0, 7)}${cp.git.dirtyCount > 0 ? ` \u00b7 ${cp.git.dirtyCount} ${t("checkpoint.dirty")}` : ""}` : t("checkpoint.gitUnavailable")} \u00b7 ${t("checkpoint.since")}: ${since?.commitsAhead !== null && since?.commitsAhead !== undefined ? `+${since.commitsAhead} ${t("checkpoint.commits")} \u00b7 ` : ""}${before}% \u2192 ${view.overallPercent}%`
+				})
 			});
 		}
 		/**
@@ -577,6 +563,7 @@ window.__ModuleLoader__.load({
 			const items = Array.isArray(row.items) ? row.items : [];
 			const doneCount = items.filter((item) => item.done === true).length;
 			const sources = Array.isArray(row.sources) ? row.sources : [];
+			const refs = Array.isArray(row.refs) ? row.refs : [];
 			const hasDetail = typeof row.detail === "string" && row.detail.trim() !== "";
 			return (0, react_jsx_runtime.jsx)("div", {
 				className: "rt-scrim",
@@ -660,6 +647,31 @@ window.__ModuleLoader__.load({
 													target: href !== null ? "_blank" : undefined,
 													rel: "noreferrer noopener",
 													children: source
+												}, index);
+											})
+										})
+									]
+								}) : null,
+								refs.length > 0 ? (0, react_jsx_runtime.jsxs)("div", {
+									className: "rt-recordSection",
+									children: [
+										(0, react_jsx_runtime.jsxs)("span", {
+											className: "rt-recordLabel",
+											children: [
+												(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconLinkOutline14, { size: 12 }),
+												` ${t("record.refs")} · ${refs.length}`
+											]
+										}),
+										(0, react_jsx_runtime.jsx)("span", {
+											className: "rt-recordSources",
+											children: refs.map((ref, index) => {
+												const href = /^https?:\/\//i.test(ref) === true ? ref : null;
+												return (0, react_jsx_runtime.jsx)("a", {
+													className: "rt-recordSource rt-recordRef",
+													href: href ?? undefined,
+													target: href !== null ? "_blank" : undefined,
+													rel: "noreferrer noopener",
+													children: ref
 												}, index);
 											})
 										})
