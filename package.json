@@ -58,6 +58,6 @@
     }
   },
   "scripts": {
-    "test": "node --test src/tracking-engine.test.mjs src/own-events.test.mjs src/tool-contract.test.mjs"
+    "test": "node --test src/tracking-engine.test.mjs src/own-events.test.mjs src/tool-contract.test.mjs src/action-route.test.mjs src/lane-record.test.mjs"
   }
 }
