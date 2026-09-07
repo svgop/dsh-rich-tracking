@@ -41,8 +41,13 @@ function seedBoundary(session) {
   return Number.isSafeInteger(value) && value > 0 ? value : 0
 }
 
-/** The session's own (post-seed) events, as a bounded array. */
+/** The session's own (post-seed) events, as a bounded array. Prefers the
+ * Session class ownEvents() method (harness >= 0.1.3 removed the raw
+ * `session.events` array this helper once read — with it gone the fallback
+ * below saw an empty log and every board action folded an empty board);
+ * the legacy slice keeps older harnesses working. */
 function ownEvents(session) {
+  if (typeof session?.ownEvents === 'function') return session.ownEvents()
   const events = Array.isArray(session?.events) ? session.events : []
   const boundary = seedBoundary(session)
   return boundary > 0 ? events.slice(boundary) : events
