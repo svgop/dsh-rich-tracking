@@ -222,6 +222,24 @@ async function foldSessionFile(file) {
  * --slug--/<sessionId>/session.jsonl.zstd) and fold its tracking state.
  * @returns the boardView (may be present:false), or null when no log exists.
  */
+/**
+ * The newest committed generation log in one session directory. The v0->v1
+ * ->v2 migrations write session.v2.jsonl.zstd BESIDE the untouched older
+ * generation, so preferring the highest version is both correct after a
+ * migration and a no-op before one; plain .jsonl covers uncompressed roots.
+ * @param {string} dir - one session's directory under the sessions root.
+ * @returns {string | undefined} the log filename to fold, newest generation first.
+ */
+function sessionLogOf(dir) {
+  for (const name of ['session.v2.jsonl.zstd', 'session.v2.jsonl', 'session.jsonl.zstd', 'session.jsonl']) {
+    try {
+      statSync(join(dir, name))
+      return name
+    } catch { /* try the next generation */ }
+  }
+  return undefined
+}
+
 async function storedBoardFor(sessionId) {
   // Path-shape guard: sessionId joins into a filesystem path, so anything
   // that could traverse (slashes, dot-dot) is rejected before the join —
@@ -231,11 +249,10 @@ async function storedBoardFor(sessionId) {
   let slugDirs = []
   try { slugDirs = readdirSync(SESSIONS_ROOT) } catch { return null }
   for (const slug of slugDirs) {
-    const file = join(SESSIONS_ROOT, slug, sessionId, 'session.jsonl.zstd')
-    try {
-      statSync(file)
-    } catch { continue }
-    const folded = await foldSessionFile(file)
+    const sessionDir = join(SESSIONS_ROOT, slug, sessionId)
+    const logName = sessionLogOf(sessionDir)
+    if (logName === undefined) continue
+    const folded = await foldSessionFile(join(sessionDir, logName))
     if (folded === null) return null
     try { return boardView(folded.state) } catch { return null }
   }
@@ -257,11 +274,13 @@ async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
     try {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory() === false) continue
-        const file = join(dir, entry.name, 'session.jsonl.zstd')
+        const sessionDir = join(dir, entry.name)
+        const logName = sessionLogOf(sessionDir)
+        if (logName === undefined) continue
         try {
-          const stats = statSync(file)
+          const stats = statSync(join(sessionDir, logName))
           // slug carries the display name (delimiters stripped, review P3)
-          files.push({ file, slug: slugName, sessionId: entry.name, mtimeMs: stats.mtimeMs, size: stats.size })
+          files.push({ file: join(sessionDir, logName), slug: slugName, sessionId: entry.name, mtimeMs: stats.mtimeMs, size: stats.size })
         } catch { /* no log for this session dir */ }
       }
     } catch { /* unreadable workspace dir */ }
