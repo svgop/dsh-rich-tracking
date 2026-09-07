@@ -539,7 +539,7 @@ window.__ModuleLoader__.load({
 									hint: t("action.dismissRow.hint"),
 									disabled: busy,
 									onClick: () => onAction("dismiss-row", row.id),
-									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline14, {})
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline16, { size: 14 })
 								})
 							]
 						}, row.id))
