@@ -116,12 +116,12 @@ test('scout delivers the ONE-subagent queue brief through the real route', async
   assert.equal(res.body.delivered, 'followup', 'scout lands as a followup on an idle agent')
   const message = agent.followups[0]
   const text = message.content.find((block) => block.type === 'text').text
-  assert.match(text, /ONE subagent, parent-paced lane queue, NO fan-out/)
+  assert.match(text, /ONE subagent, all lanes queued into it/)
   assert.match(text, /Launch ONE continuable background subagent/)
-  assert.match(text, /LANES 2-3 — the parent's queue: ONE send_message per lane, only after the prior lane's result/)
+  assert.match(text, /LANES 2-3 — send_message payloads, send immediately after launch/)
   assert.equal((text.match(/TASK: study 3-6 competitors/g) ?? []).length, 3, 'every lane payload is self-contained')
-  assert.match(text, /when a lane's result message arrives from the researcher, fold it into its row/, 'the pump: fold + send next lane in one turn')
-  assert.match(text, /send your condensed result .* back to the parent/, 'each lane payload ends by returning its result to the parent')
+  assert.match(text, /send_message EVERY remaining lane to the SAME agent/, 'all lanes queued up front')
+  assert.match(text, /makes a todo list of the lanes/, 'the researcher turns the queue into an inline todo')
 })
 
 test('align instruction is the audit protocol with a required verdict', async () => {

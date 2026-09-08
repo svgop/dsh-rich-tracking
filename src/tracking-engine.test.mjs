@@ -284,7 +284,7 @@ test('refs: shape rules mirror sources — array, caps, non-empty, length', () =
 
 // ── v0.4: the scout brief (research fan-out) ────────────────────────────────
 
-test('researchContext: ONE subagent, parent-paced lane queue — launch lane 1, parent sends each next lane after a result', () => {
+test('researchContext: ONE subagent, all lanes queued into it up front via send_message', () => {
   assert.equal(researchContext(null), null)
   let state = null
   state = foldTracking(state, {
@@ -303,13 +303,13 @@ test('researchContext: ONE subagent, parent-paced lane queue — launch lane 1, 
   const view = boardView(state)
   const brief = researchContext(view)
   // Single-subagent shape (operator 2026-09-07): no per-row fan-out.
-  assert.match(brief, /SCOUT \(tracking board r3, 3 open lane\(s\) — ONE subagent, parent-paced lane queue, NO fan-out\)/)
+  assert.match(brief, /SCOUT \(tracking board r3, 3 open lane\(s\) — ONE subagent, all lanes queued into it\)/)
   assert.match(brief, /Launch ONE continuable background subagent/)
   assert.match(brief, /LANE 1 — the launch prompt/)
-  assert.match(brief, /LANES 2-3 — the parent's queue: ONE send_message per lane, only after the prior lane's result/)
-  assert.match(brief, /YOU hold the queue/)
-  assert.match(brief, /when a lane's result message arrives from the researcher, fold it into its row/)
-  assert.doesNotMatch(brief, /land in its inbox in FIFO order/, 'the natural-FIFO claim was disproven in the live run: send_message interjects into a working child')
+  assert.match(brief, /LANES 2-3 — send_message payloads, send immediately after launch/)
+  assert.match(brief, /send_message EVERY remaining lane to the SAME agent/)
+  assert.match(brief, /makes a todo list of the lanes/)
+  assert.match(brief, /work the lanes one at a time, in order/)
   // Every lane payload is self-contained: each carries the research method.
   assert.equal((brief.match(/TASK: study 3-6 competitors/g) ?? []).length, 3, 'all three lanes carry the full method')
   assert.match(brief, /LANE 1 — RESEARCH ROW "W2 fleet rebuild" \(id "w2-fleet", 40%, active\)/)
