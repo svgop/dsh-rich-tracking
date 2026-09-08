@@ -896,12 +896,10 @@ function boardState(board) {
 	return "idle";
 }
 const STATE_ORDER = { running: 0, playing: 1, idle: 2, offline: 3, done: 4 };
-const TRACKS_CSS = `.trk2-foot{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:calc(100% - 16px);height:34px;padding:0 10px;margin:2px 8px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:8px;cursor:pointer;text-align:left}
-.trk2-foot:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.trk2-footRail{justify-content:center;width:36px;height:36px;margin:2px auto;padding:0}
-.trk2-footIcon{display:inline-flex;justify-content:center;align-items:center;width:24px;height:24px;flex:none;color:var(--dsw-alias-label-tertiary)}
-.trk2-foot:hover .trk2-footIcon{color:var(--dsw-alias-label-secondary)}
-.trk2-footLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 10px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:8px;cursor:pointer;text-align:left}
+.trk2-entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.trk2-entryIcon{display:inline-flex;justify-content:center;align-items:center;width:24px;height:24px;flex:none;color:var(--dsw-alias-label-tertiary)}
+.trk2-entryLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trk2-scrim{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:24px}
 .trk2-card{width:100%;max-width:880px;max-height:min(92vh,1200px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.3)}
 .trk2-card,.trk2-card *{box-sizing:border-box}
@@ -1266,33 +1264,83 @@ const TRACKS_CSS = `.trk2-foot{appearance:none;box-sizing:border-box;display:fle
 			return scrim;
 		}
 
-		/** The sidebar footer action (the sanctioned slot): wide row / rail icon; mounts the dialog overlay. */
-		function makeTracksFooterAction(ctx) {
-			return function TracksFooterAction(props) {
-				const wide = props.wide !== false;
-				const [open, setOpen] = (0, react.useState)(false);
-				(0, react.useEffect)(() => {
-					if (open !== true) return () => {};
-					const panel = createTracksPanel(ctx.sessions, () => setOpen(false));
-					document.body.appendChild(panel);
-					const onKey = (event) => { if (event.key === "Escape") { event.stopPropagation(); setOpen(false); } };
-					document.addEventListener("keydown", onKey, true);
-					return () => { document.removeEventListener("keydown", onKey, true); panel.remove(); };
-				}, [open]);
-				return (0, react_jsx_runtime.jsxs)("button", {
-					type: "button",
-					className: cx("trk2-foot", wide === false && "trk2-footRail"),
-					"aria-label": tt("tracks.entry"),
-					"aria-pressed": open,
-					title: tt("tracks.tooltip"),
-					onClick: () => setOpen((value) => !value),
-					children: [
-						(0, react_jsx_runtime.jsx)("span", { className: "trk2-footIcon", dangerouslySetInnerHTML: { __html: TRACKS_ICON } }),
-						wide === true ? (0, react_jsx_runtime.jsx)("span", { className: "trk2-footLabel", children: tt("tracks.entry") }) : null
-					]
-				});
-			};
+		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
+		
+		function tracksSidebarRoot() {
+			const column = document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]');
+			if (column === null) return undefined;
+			return column.querySelector('[class*="logoRow"]')?.parentElement ?? column.firstElementChild ?? undefined;
 		}
+		function tracksNewSessionButton(root) {
+			const nested = root.querySelector('button[class*="newSession"]');
+			if (nested !== null) return nested;
+			for (const child of root.children) if (child.tagName === "BUTTON") return child;
+			return undefined;
+		}
+		function mountTracksEntry(onToggle) {
+			if (document.querySelector(`[${TRACKS_ENTRY}]`) !== null) return () => {};
+			const entry = document.createElement("button");
+			entry.type = "button";
+			entry.setAttribute(TRACKS_ENTRY, "");
+			entry.setAttribute("data-dsh-plugin", "rich-tracking");
+			entry.setAttribute("data-dsh-part", "tracks-sidebar-entry");
+			entry.className = "trk2-entry";
+			const icon = document.createElement("span");
+			icon.className = "trk2-entryIcon";
+			icon.innerHTML = TRACKS_ICON;
+			const text = document.createElement("span");
+			text.className = "trk2-entryLabel";
+			text.textContent = tt("tracks.entry");
+			entry.title = tt("tracks.tooltip");
+			entry.append(icon, text);
+			entry.addEventListener("click", onToggle);
+			let root, placed = false;
+			const place = () => {
+				const button = root === undefined ? undefined : tracksNewSessionButton(root);
+				if (button === undefined) return false;
+				const row = button.closest('[class*="logoRow"]');
+				const base = row !== null && row.parentElement === root ? row : button;
+				const family = Array.from(root.children).filter((el) => el instanceof HTMLElement && el.matches(TRACKS_FAMILY.join(", ")));
+				const anchor = family.length > 0 ? family[family.length - 1].nextElementSibling : base.nextElementSibling;
+				root.insertBefore(entry, anchor);
+				return true;
+			};
+			const tryPlace = () => {
+				if (root !== undefined && !root.isConnected) { rootObserver.disconnect(); root = undefined; placed = false; }
+				if (placed && document.body.contains(entry)) return;
+				root ??= tracksSidebarRoot();
+				if (root === undefined) return;
+				placed = place();
+				if (placed) rootObserver.observe(root, { childList: true, subtree: true });
+			};
+			const waitObserver = new MutationObserver(tryPlace);
+			waitObserver.observe(document.body, { childList: true, subtree: true });
+			const rootObserver = new MutationObserver(() => {
+				if (root === undefined || !root.isConnected) { placed = false; tryPlace(); return; }
+				if (!root.contains(entry)) placed = place();
+			});
+			tryPlace();
+			return () => { waitObserver.disconnect(); rootObserver.disconnect(); entry.remove(); };
+		}
+		
+		function installTracksView(ctx) {
+			installTracksStyles();
+			let panel = null;
+			const onKey = (event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } };
+			const close = () => {
+				if (panel !== null) { panel.remove(); panel = null; }
+				document.removeEventListener("keydown", onKey, true);
+			};
+			const toggle = () => {
+				if (panel !== null) { close(); return; }
+				panel = createTracksPanel(ctx.sessions, () => close());
+				document.body.appendChild(panel);
+				document.addEventListener("keydown", onKey, true);
+			};
+			const disposeEntry = mountTracksEntry(toggle);
+			return () => { disposeEntry(); close(); };
+		}
+		
 
 		function installTracksStyles() {
 			const tagId = "dsh-rich-tracking/tracks.css";
@@ -1313,15 +1361,7 @@ const TRACKS_CSS = `.trk2-foot{appearance:none;box-sizing:border-box;display:fle
 				order: 5,
 				locale: NS
 			}, TrackingDock));
-			// The Tracks entry rides the sanctioned footer-action slot beside
-			// Settings (the v0.4 MutationObserver DOM graft is retired).
-			ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
-				name: "sidebar.footer.action",
-				id: "tracks",
-				order: 10,
-				locale: NS
-			}, makeTracksFooterAction(ctx)));
-			ctx.effect(() => installTracksStyles(), "rich-tracking: tracks styles");
+			ctx.effect(() => installTracksView(ctx), "rich-tracking: tracks sidebar view");
 		}
 		exports.apply = apply;
 		exports.inject = inject;

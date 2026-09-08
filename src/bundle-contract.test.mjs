@@ -67,13 +67,12 @@ test('every primitives reference in the client bundle is a real export', async (
   )
 })
 
-test('the Tracks entry rides the sanctioned seams (no DOM graft)', () => {
+test('the Tracks entry mounts at the sidebar top via the family graft (operator placement, restored 2026-09-07)', () => {
   const bundle = readFileSync(new URL('./client.bundle.js', import.meta.url), 'utf8')
-  assert.match(bundle, /ctx\.slots\.inject\("sidebar\.footer\.action"/, 'the Tracks entry must register through the sidebar.footer.action slot')
+  assert.match(bundle, /function mountTracksEntry/, 'the original sidebar-top graft entry is mounted')
   assert.match(bundle, /const inject = \["slots", "locale", "sessions"\]/, 'the bundle must inject the sessions service (offline wake + open)')
-  // The v0.4 graft hunted the sidebar DOM (logoRow) with MutationObservers.
-  // Code references must stay gone; comments may mention the history.
+  // The footer-action relocation was an unrequested placement change and was
+  // reverted the same day; one entry only, at the top of the sidebar.
   const code = bundle.split('\n').filter((line) => /^[ \t]*(\/\/|\*|\/\*)/.test(line) === false).join('\n')
-  assert.doesNotMatch(code, /logoRow/, 'no logoRow hunting in code')
-  assert.doesNotMatch(code, /new MutationObserver/, 'no MutationObserver grafts in code')
+  assert.doesNotMatch(code, /slots\.inject\("sidebar\.footer\.action"/, 'no footer-action registration — one entry, top of sidebar')
 })
