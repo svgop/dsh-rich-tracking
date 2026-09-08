@@ -399,22 +399,22 @@ export function researchContext(view, rowId) {
     const note = row.note !== undefined ? `\nLatest note: ${row.note}` : ''
     const detailHint = row.detail !== undefined ? `\nCurrent detail (${row.detail.length} chars) already on the row — EXTEND it, do not discard it.` : ''
     const ordering = queued === true
-      ? '\nThis is one lane of a queued sequence: if you are still mid-task on an earlier lane, finish or cleanly wrap that lane first, then work THIS one — lanes are processed one at a time, in order.'
-      : ''
+      ? '\nThis is the next lane of the research sequence: work exactly THIS lane, then send your condensed result (with the digest path and key links) back to the parent — the next lane arrives after that result lands.'
+      : '\nWhen this lane is done, send your condensed result (with the digest path and key links) back to the parent — the next lane arrives after that result lands.'
     return `LANE ${lane} — RESEARCH ROW "${row.label}" (id "${row.id}", ${row.percent}%, ${row.status ?? deriveStatus(row.percent)})${items}${basis}${note}${detailHint}${ordering}
 TASK: study 3-6 competitors or comparable implementations for exactly this row's problem — what each does differently, its approach, its key tradeoff, and what it got right that we have not. Write the findings as a CONDENSED durable digest under .docs/digest/ or .docs/research/ (digests, not walls of text — research that is not written down did not happen), then return the condensed findings plus the digest path and the key external links.`
   }
   const method = (lane) => laneBrief(lane.row, lane.index, lane.index > 1)
   const lanes = targets.map((row, index) => ({ row, index: index + 1 }))
-  const header = `SCOUT (tracking board r${view.revision}, ${targets.length} open lane(s) — ONE subagent, sequential queue, NO fan-out):
+  const header = `SCOUT (tracking board r${view.revision}, ${targets.length} open lane(s) — ONE subagent, parent-paced lane queue, NO fan-out):
 The operator pressed SCOUT: they want competitive knowledge folded into the board before more work happens. Execute exactly this delegation shape:
 1. Launch ONE continuable background subagent (your subagent tool, run_in_background) with LANE 1 below verbatim as its prompt.
-2. Immediately after launching, deliver EVERY remaining lane to the SAME agent with send_message (one message per lane, in order) — the messages land in its inbox in FIFO order and it takes each lane as it finishes the one before (a message may also arrive mid-move; every queued payload tells the researcher to wrap the current lane first); slower than parallel children, but no rate-limit pressure and one coherent researcher throughout. Each lane payload below is self-contained — send it verbatim.
-3. Keep working while the researcher grinds the queue; fold each lane's report in as it lands.
+2. YOU hold the queue — this is load-bearing: send_message to a working child interjects at its next step, so lanes sent up front all land mid-lane-1 (verified in a live run 2026-09-07). The parent paces the queue instead: when a lane's result message arrives from the researcher, fold it into its row (tracking_write: detail, sources, refs), and in that same turn send_message the NEXT lane payload below to the researcher, verbatim. One lane in flight at any moment; the researcher works with a clean context, one lane at a time.
+3. Keep working between results; each fold-and-send turn is the pump. When the LAST lane's result lands, fold it and continue the mission.
 Then call tracking_write and enrich every researched row: detail (<= ${LIMITS.maxDetail} chars — the row's full record: what is done, what remains, and now the competitive picture with the decisive tradeoffs), sources (up to ${LIMITS.maxSources} internal links/paths — your written digests, receipts), and refs (up to ${LIMITS.maxRefs} EXTERNAL links — the competitor/dependency pages that justify the direction). Bump a row's percent ONLY if artifact truth actually changed — research is context, not progress.
 
 ================ LANE 1 — the launch prompt (subagent tool, run_in_background) ================
-${method(lanes[0])}${lanes.length > 1 ? `\n\n================ LANES 2-${lanes.length} — send_message payloads, in order, same agent ================\n${lanes.slice(1).map((lane) => `-------- send_message payload (lane ${lane.index}) --------\n${method(lane)}`).join('\n\n')}` : ''}`
+${method(lanes[0])}${lanes.length > 1 ? `\n\n================ LANES 2-${lanes.length} — the parent's queue: ONE send_message per lane, only after the prior lane's result ================\n${lanes.slice(1).map((lane) => `-------- lane ${lane.index} — send after lane ${lane.index - 1}'s result --------\n${method(lane)}`).join('\n\n')}` : ''}`
   return scoped ? `SCOUT (tracking board r${view.revision}, scoped to one row — ONE subagent):
 The operator pressed SCOUT on a single row. Launch ONE background research subagent (your subagent tool, run_in_background) with the brief below verbatim; no other lanes are in scope.
 
