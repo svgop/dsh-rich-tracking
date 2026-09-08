@@ -36,7 +36,7 @@ test('tracking_write registers with the full gate contract in its description', 
     'never seen this project',
     'Fix login retry loop',
     'REPLACES the previous board',
-    'WRITING STANDARD',
+    'WRITING (the board is read cold',
     'row.refs 1-12 EXTERNAL reference strings <= 300 chars',
   ]) {
     assert.ok(write.description.includes(fragment), `description must state: ${fragment}`)
