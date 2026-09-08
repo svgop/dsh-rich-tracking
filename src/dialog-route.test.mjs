@@ -103,6 +103,34 @@ test('unknown source values are rejected, not silently ignored', async () => {
   assert.equal(res.body.error, 'invalid-action')
 })
 
+test('realign and note deliver through the real route; note text is validated', async () => {
+  const rows = [
+    { id: 'r1', label: 'Lane one', percent: 20, status: 'active', evidence: 'x: 1/5' },
+    { id: 'r2', label: 'Lane two', percent: 0 },
+  ]
+  const agent = makeAgent([boardEvent(rows)])
+  const handler = captureRoutes(agent)
+
+  const realign = await call(handler, { sessionId: 'session-test', kind: 'realign' })
+  assert.equal(realign.status, 200)
+  assert.equal(realign.body.delivered, 'followup')
+  const realignText = agent.followups.at(-1).content.find((block) => block.type === 'text').text
+  assert.match(realignText, /REALIGN——the board has drifted|REALIGN — the board has drifted/)
+  assert.match(realignText, /drop rows the current design no longer owns/)
+  assert.match(realignText, /describes today's mission, not last week's/)
+
+  const note = await call(handler, { sessionId: 'session-test', kind: 'note', rowId: 'r1', text: 'Percent looks high — verify against the receipts before Friday.' })
+  assert.equal(note.status, 200)
+  assert.equal(note.body.delivered, 'followup')
+  const noteText = agent.followups.at(-1).content.find((block) => block.type === 'text').text
+  assert.match(noteText, /operator attached a note to tracking row "Lane one"/)
+  assert.match(noteText, /verify against the receipts before Friday/, 'the note text reaches the agent verbatim')
+  assert.equal(agent.session.appended.at(-1).data.text, 'Percent looks high — verify against the receipts before Friday.', 'the note is durable in the decision event')
+
+  assert.equal((await call(handler, { sessionId: 'session-test', kind: 'note', rowId: 'r1', text: '   ' })).body.error.startsWith('note-required'), true)
+  assert.equal((await call(handler, { sessionId: 'session-test', kind: 'note', rowId: 'missing', text: 'x' })).status, 400, 'a note on an absent row is row-not-found')
+})
+
 test('scout delivers the ONE-subagent queue brief through the real route', async () => {
   const rows = [
     { id: 'r1', label: 'Lane one', percent: 20, status: 'active', evidence: 'x: 1/5' },

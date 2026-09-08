@@ -645,7 +645,7 @@ function trackingCheckpointTool() {
 }
 
 /** Instruction texts (design §8.3, exact copy). */
-function instructionFor(kind, view, rowId) {
+function instructionFor(kind, view, rowId, text) {
   if (kind === 'scout') {
     // The engine-built fan-out brief; null when there is nothing to scout
     // (all rows done, or a scoped rowId that is done/absent) — the route
@@ -676,6 +676,19 @@ function instructionFor(kind, view, rowId) {
 4. PRUNE AND OWN: drop rows whose owning artifacts prove them obsolete (name them); add rows the plan/receipts own but the board is missing.
 5. VERDICT — the write's TOP-LEVEL note must be the audit result a human can act on: "align r${prior}->r<N>: <k>/<total> rows survived unchanged; corrected <id from%->to% (why)>; dropped <ids>; added <ids>; unreadable <ids>". If everything survived, still write it: "align r${prior}: all rows verified against artifacts" plus any refreshed evidence.
 Then re-align your todo_write list to the remaining work. Unreadable or missing artifacts are findings to REPORT in the verdict, never a reason to keep an unverified percent.`
+  }
+  if (kind === 'realign') {
+    const prior = view?.revision ?? '?'
+    return `[rich-tracking | realign] The operator pressed REALIGN — the board has drifted from the current design and system: rows gone stale, structure no longer matching the mission, percents and prose describing yesterday. Bring the board back in line with today's reality:
+1. READ the current design: the live plan/design artifacts, the receipts that landed since the last write, and the actual state of the system the rows describe.
+2. REBUILD the board to describe the mission as it stands NOW: drop rows the current design no longer owns (name what replaced them in the note), add rows the design now owns but the board misses, re-map workstreams when the structure itself changed.
+3. REFRESH every surviving row in the same write — percent and item flags from artifact truth, notes and evidence to current state.
+The board after this write describes today's mission, not last week's. Then re-align your todo_write list to the rebuilt board.`
+  }
+  if (kind === 'note') {
+    const row = view?.rows.find((entry) => entry.id === rowId)
+    if (row === undefined) return null
+    return `[rich-tracking | note] The operator attached a note to tracking row "${row.label}" (${row.id}, ${row.percent}%, ${row.status}): "${text}". Read the note and take the action it implies, now: when it questions the percent or the items, verify against the row's artifacts and correct the row; when it adds context or a decision, fold it into the row's note and detail; when it asks for work, do that work. Then call tracking_write with the refreshed row.`
   }
   if (kind === 'checkpoint-request') {
     const priorExpect = view?.lastCheckpoint?.expect ?? null
@@ -950,7 +963,7 @@ export function apply(ctx) {
           writeJson(res, 400, { ok: false, error: 'invalid-action' })
           return
         }
-        const kinds = new Set(['pursue', 'delegate', 'scout', 'align', 'dismiss', 'dismiss-row', 'checkpoint-request', 'play', 'pause'])
+        const kinds = new Set(['pursue', 'delegate', 'scout', 'align', 'realign', 'note', 'dismiss', 'dismiss-row', 'checkpoint-request', 'play', 'pause'])
         if (kinds.has(body.kind) === false) { writeJson(res, 400, { ok: false, error: 'unknown-action' }); return }
         // `source` names the surface that fired the action. The Tracks dialog
         // ('dialog') is the management surface: its dismiss may close a board
@@ -986,7 +999,16 @@ export function apply(ctx) {
           writeJson(res, 200, { ok: true, delivered: 'row-already-absent' })
           return
         }
-        const instruction = instructionFor(body.kind, view, body.rowId)
+        // An operator note carries its text; everything else is a verb.
+        let noteText = null
+        if (body.kind === 'note') {
+          if (typeof body.text !== 'string' || body.text.trim() === '' || body.text.trim().length > 500) {
+            writeJson(res, 400, { ok: false, error: 'note-required: a note needs text between 1 and 500 characters' })
+            return
+          }
+          noteText = body.text.trim()
+        }
+        const instruction = instructionFor(body.kind, view, body.rowId, noteText)
         if (instruction === null) {
           // A forked session's dock can render the PARENT's board (the
           // projection folds the inherited prefix); this session's own fold
@@ -997,10 +1019,10 @@ export function apply(ctx) {
           return
         }
 
-        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, instruction, at: Date.now() })
+        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, ...(noteText !== null ? { text: noteText } : {}), instruction, at: Date.now() })
         writeTrackingRecord(agent.session)
 
-        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'scout' || body.kind === 'align' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
+        const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'scout' || body.kind === 'align' || body.kind === 'realign' || body.kind === 'note' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
         if (whip === true) {
           const message = createPluginMessage(instruction, 'steer', `${body.kind}${body.rowId !== undefined && body.rowId !== null ? ` ${body.rowId}` : ''}`)
           if (agent.status === 'running') agent.steer(message)

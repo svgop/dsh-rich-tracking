@@ -21,9 +21,10 @@ window.__ModuleLoader__.load({
 		//#region lib/transport.js
 		const API = "/api/rich-tracking";
 		/** Fire one operator action; resolves {ok, delivered} or throws with the host's error. */
-		async function postAction(sessionId, kind, rowId, source) {
+		async function postAction(sessionId, kind, rowId, source, text) {
 			const payload = rowId === undefined ? { sessionId, kind } : { sessionId, kind, rowId };
 			if (source !== undefined) payload.source = source;
+			if (text !== undefined) payload.text = text;
 			const res = await fetch(`${API}/action`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
@@ -93,6 +94,12 @@ window.__ModuleLoader__.load({
 		"action.delegate.hint": "Hand this row to a background subagent with read/write access — the delegation instruction carries the row's details and progress; the subagent tracks its own board scoped to this task.",
 			"action.align": "Align",
 			"action.align.hint": "Force a re-derivation of every percent from the named artifacts — the lie-detector pass.",
+		"action.realign": "Realign",
+		"action.realign.hint": "Rebuild the board against the current design and system — drop stale rows, add missing ones, refresh everything in one write.",
+		"action.note": "Note",
+		"action.note.hint": "Attach a comment to this row — the agent reads it and takes the action it implies.",
+		"note.placeholder": "Note to the agent about this row…",
+		"note.send": "Send",
 			"action.alignRow.hint": "Re-derive this row's percent from its evidence artifacts.",
 			"action.dismiss": "Dismiss",
 			"action.dismiss.hint": "Dismiss the whole board (a later tracking_write re-opens it).",
@@ -177,6 +184,12 @@ window.__ModuleLoader__.load({
 		"action.delegate.hint": "把这一行交给拥有读写权限的后台子代理——委派指令携带该行的详情与进度；子代理在自己的会话里维护只属于此任务的看板。",
 			"action.align": "对齐",
 			"action.align.hint": "强制从证据工件重新推导所有百分比——测谎通道。",
+		"action.realign": "重对齐",
+		"action.realign.hint": "按当前设计与系统重建看板——删去过时行、补上缺失行、一次写入全部刷新。",
+		"action.note": "备注",
+		"action.note.hint": "给这一行附一条备注——agent 阅读后执行备注所要求的动作。",
+		"note.placeholder": "给 agent 的行备注……",
+		"note.send": "发送",
 			"action.alignRow.hint": "从该行的证据工件重新推导其百分比。",
 			"action.dismiss": "关闭",
 			"action.dismiss.hint": "关闭整个看板（之后任何 tracking_write 会重新打开它）。",
@@ -271,6 +284,11 @@ window.__ModuleLoader__.load({
 .rt-rowActions{flex:none;align-items:center;gap:2px;display:flex;visibility:hidden}
 .rt-row:hover .rt-rowActions,.rt-row:focus-within .rt-rowActions{visibility:visible}
 .rt-rowNote{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere}
+.rt-noteInput{display:flex;gap:6px;width:100%;margin-top:2px}
+.rt-noteInput input{flex:1;min-width:0;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;padding:3px 8px;border-radius:6px;outline:none}
+.rt-noteInput input:focus{border-color:var(--dsw-alias-state-business-primary)}
+.rt-noteInput button{flex:none;border:1px solid var(--dsw-alias-border-l2);background:0 0;border-radius:6px;padding:2px 10px;font:inherit;font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.rt-noteInput button:hover{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
 .rt-rowEvidence{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow-wrap:anywhere;opacity:.85}
 .rt-checkpoint{border-top:1px solid var(--dsw-alias-border-l1);padding:0;display:flex;flex-direction:column}
 .rt-cpLine{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:16px;overflow-wrap:anywhere;padding:8px 12px 0}
@@ -375,6 +393,14 @@ window.__ModuleLoader__.load({
 		/** One board row: glyph, label, mini progressbar, percent, hover-revealed record "?" + pursue/delegate/align/dismiss. Rows carrying `items` expand on click/Enter to show the acceptance checklist — done items grey + strikethrough, open items primary. */
 		function BoardRow({ row, busy, onAction, onRecord, t }) {
 			const [open, setOpen] = (0, react.useState)(false);
+			const [noting, setNoting] = (0, react.useState)(false);
+			const [noteText, setNoteText] = (0, react.useState)("");
+			const submitNote = () => {
+				const text = noteText.trim();
+				setNoting(false);
+				setNoteText("");
+				if (text !== "") onAction("note", row.id, text);
+			};
 			const items = Array.isArray(row.items) ? row.items : [];
 			const hasItems = items.length > 0;
 			const doneCount = items.filter((item) => item.done === true).length;
@@ -418,6 +444,25 @@ window.__ModuleLoader__.load({
 							}),
 							row.note !== undefined ? (0, react_jsx_runtime.jsx)("span", { className: "rt-rowNote", children: row.note }) : null,
 							row.evidence !== undefined ? (0, react_jsx_runtime.jsx)("span", { className: "rt-rowEvidence", children: `${t("row.basis")} ${row.evidence}` }) : null,
+							noting === true ? (0, react_jsx_runtime.jsxs)("span", {
+								className: "rt-noteInput",
+								children: [
+									(0, react_jsx_runtime.jsx)("input", {
+										value: noteText,
+										placeholder: t("note.placeholder"),
+										maxLength: 500,
+										spellCheck: false,
+										autoFocus: true,
+										onChange: (event) => setNoteText(event.target.value),
+										onKeyDown: (event) => {
+											event.stopPropagation();
+											if (event.key === "Enter") { event.preventDefault(); submitNote(); }
+											if (event.key === "Escape") { event.stopPropagation(); setNoting(false); }
+										},
+									}),
+									(0, react_jsx_runtime.jsx)("button", { type: "button", onClick: submitNote, children: t("note.send") })
+								]
+							}) : null,
 							open === true && hasItems === true ? (0, react_jsx_runtime.jsx)("span", {
 								className: "rt-itemList",
 								children: items.map((item, index) => (0, react_jsx_runtime.jsxs)("span", {
@@ -433,6 +478,13 @@ window.__ModuleLoader__.load({
 					(0, react_jsx_runtime.jsxs)("span", {
 						className: "rt-rowActions",
 						children: [
+							(0, react_jsx_runtime.jsx)(ActionButton, {
+								label: t("action.note"),
+								hint: t("action.note.hint"),
+								disabled: busy,
+								onClick: () => setNoting((value) => !value),
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconListPenOutline16, { size: 14 })
+							}),
 							hasItems === true ? (0, react_jsx_runtime.jsx)(ActionButton, {
 								label: open === true ? t("row.collapse") : t("row.expand"),
 								hint: open === true ? t("row.collapse") : t("row.expand"),
@@ -747,11 +799,11 @@ window.__ModuleLoader__.load({
 			// mid-work: whole-board dismiss is host-blocked while rows are open.
 			if (view === null || view === undefined || view.present !== true) return null;
 
-			const act = (kind, rowId) => {
+			const act = (kind, rowId, text) => {
 				setBusy(kind + (rowId ?? ""));
 				setError(null);
 				setDelivered(null);
-				postAction(sessionId, kind, rowId).then((body) => {
+				postAction(sessionId, kind, rowId, undefined, text).then((body) => {
 					setDelivered({ kind, delivered: body.delivered, at: Date.now() });
 					setBusy(null);
 				}).catch((cause) => {
@@ -803,6 +855,13 @@ window.__ModuleLoader__.load({
 											disabled: busy !== null,
 											onClick: () => act(view.playMode === true ? "pause" : "play"),
 											children: view.playMode === true ? (0, react_jsx_runtime.jsx)("span", { className: "rt-playBtn", children: (0, react_jsx_runtime.jsx)("svg", { width: "12", height: "12", viewBox: "0 0 12 12", "aria-hidden": "true", children: [(0, react_jsx_runtime.jsx)("rect", { x: "1", y: "1", width: "3.5", height: "10", rx: "0.5", fill: "currentColor" }), (0, react_jsx_runtime.jsx)("rect", { x: "7.5", y: "1", width: "3.5", height: "10", rx: "0.5", fill: "currentColor" })] }) }) : (0, react_jsx_runtime.jsx)("svg", { width: "12", height: "12", viewBox: "0 0 12 12", "aria-hidden": "true", children: (0, react_jsx_runtime.jsx)("path", { d: "M2.5 1.5v9l8-4.5z", fill: "currentColor" }) })
+										}),
+										(0, react_jsx_runtime.jsx)(ActionButton, {
+											label: t("action.realign"),
+											hint: t("action.realign.hint"),
+											disabled: busy !== null,
+											onClick: () => act("realign"),
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutline16, { size: 14 })
 										}),
 										(0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.align"),
@@ -880,6 +939,7 @@ const OPEN_SVG = '<svg viewBox="0 0 14 14" width="13" height="13" fill="none" ar
 const PLAY_SVG = '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 1.5v9l8-4.5z" fill="currentColor"/></svg>';
 const PAUSE_SVG = ST_SVGS.playing;
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+const NOTE_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2.5h10v7.5H8.5L5.5 13v-3H3z"/><path d="M5.5 5h5M5.5 7h3.5"/></svg>';
 const SEND_SVG = '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" aria-hidden="true"><path d="M1.5 7L12.5 2.5 9 12.5 6.8 8.2 1.5 7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6.8 8.2L12.5 2.5" stroke="currentColor" stroke-width="1.2"/></svg>';
 const ROW_SVGS = {
 	done: ST_SVGS.done,
@@ -949,6 +1009,11 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 .trk2-rowAct{flex:none;width:24px;height:24px;display:grid;place-items:center;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:6px;cursor:pointer;visibility:hidden}
 .trk2-row:hover .trk2-rowAct,.trk2-row:focus-within .trk2-rowAct{visibility:visible}
 .trk2-rowAct:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-business-primary)}
+.trk2-noteRow{display:flex;gap:6px;padding:2px 16px 6px 26px}
+.trk2-noteRow input{flex:1;min-width:0;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;padding:3px 8px;border-radius:6px;outline:none}
+.trk2-noteRow input:focus{border-color:var(--dsw-alias-state-business-primary)}
+.trk2-noteRow button{flex:none;border:1px solid var(--dsw-alias-border-l2);background:0 0;border-radius:6px;padding:2px 10px;font:inherit;font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.trk2-noteRow button:hover{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
 .trk2-actions{display:flex;flex-wrap:wrap;gap:4px;padding:7px 16px;border-top:1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent)}
 .trk2-act{appearance:none;background:0 0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:2px 9px;font:inherit;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .trk2-act:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
@@ -1031,7 +1096,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 			const setStatus = (text, isError) => { footStatus.textContent = text ?? ""; footStatus.style.color = isError === true ? "var(--dsw-alias-state-error-primary)" : ""; };
 
 			let busy = false;
-			const act = async (board, kind, rowId) => {
+			const act = async (board, kind, rowId, text) => {
 				if (busy === true) return;
 				busy = true;
 				card.querySelectorAll(".trk2-act,.trk2-mini,.trk2-rowAct").forEach((btn) => { btn.disabled = true; });
@@ -1049,7 +1114,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 					let result = null;
 					for (let attempt = 0; attempt < 20; attempt += 1) {
 						try {
-							result = await postAction(board.sessionId, kind, rowId, "dialog");
+							result = await postAction(board.sessionId, kind, rowId, "dialog", text);
 							break;
 						} catch (cause) {
 							if (cause instanceof Error && cause.message !== "session-offline") throw cause;
@@ -1231,6 +1296,40 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 						pursue.addEventListener("click", () => { void act(board, "pursue", row.id); });
 						rowEl.append(pursue);
 					}
+					const noteBtn = document.createElement("button");
+					noteBtn.type = "button";
+					noteBtn.className = "trk2-rowAct";
+					noteBtn.innerHTML = NOTE_SVG;
+					noteBtn.title = tt("action.note.hint");
+					noteBtn.addEventListener("click", (event) => {
+						event.stopPropagation();
+						const existing = rowEl.nextElementSibling;
+						if (existing !== null && existing.classList.contains("trk2-noteRow")) { existing.remove(); return; }
+						const noteRow = document.createElement("div");
+						noteRow.className = "trk2-noteRow";
+						const input = document.createElement("input");
+						input.maxLength = 500;
+						input.placeholder = tt("note.placeholder");
+						input.spellcheck = false;
+						const send = document.createElement("button");
+						send.type = "button";
+						send.textContent = tt("note.send");
+						const submit = () => {
+							const text = input.value.trim();
+							noteRow.remove();
+							if (text !== "") void act(board, "note", row.id, text);
+						};
+						send.addEventListener("click", submit);
+						input.addEventListener("keydown", (keyEvent) => {
+							keyEvent.stopPropagation();
+							if (keyEvent.key === "Enter") submit();
+							if (keyEvent.key === "Escape") { keyEvent.preventDefault(); noteRow.remove(); }
+						});
+						noteRow.append(input, send);
+						rowEl.after(noteRow);
+						input.focus();
+					});
+					rowEl.append(noteBtn);
 					rowsEl.append(rowEl);
 				}
 				const actions = document.createElement("div");
@@ -1245,6 +1344,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 				};
 				addButton(tt("action.checkpoint"), "checkpoint-request");
 				addButton(tt("action.align"), "align");
+				addButton(tt("action.realign"), "realign");
 				if (board.allDone !== true) addButton(tt("action.scout"), "scout");
 				rowsEl.append(actions);
 				wrap.append(headEl, rowsEl);
