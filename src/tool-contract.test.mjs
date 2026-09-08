@@ -64,3 +64,13 @@ test('the announcement names the workspace record lane (discovery contract)', ()
   assert.ok(match[1].includes('.dsh/tracking/<sessionId>.json'), 'announcement must point agents at the record lane')
   assert.ok(match[1].includes("prior sessions' records"), 'announcement must tell agents prior records are readable there')
 })
+
+test('injected context talks only about tracking — no cross-plugin or ecosystem chatter', async () => {
+  const source = readFileSync(new URL('./host.js', import.meta.url), 'utf8')
+  const engine = readFileSync(new URL('./tracking-engine.js', import.meta.url), 'utf8')
+  for (const [name, text] of [['host', source], ['engine', engine]]) {
+    const code = text.split(String.fromCharCode(10)).filter((line) => /^[ \t]*(\/\/|\*|\/\*)/.test(line) === false).join(String.fromCharCode(10))
+    const matches = [...code.matchAll(/dsh-[a-z-]+/g)].map((m) => m[0]).filter((n) => n !== 'dsh-rich-tracking' && n !== 'dsh-llm' && n !== 'dsh-agent')
+    assert.deepEqual([...new Set(matches)], [], `${name}: foreign plugin references in injected context (operator rule 2026-09-08: a plugin's context covers its own domain only)`)
+  }
+})
