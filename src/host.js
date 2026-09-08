@@ -17,7 +17,7 @@ import { execFile } from 'node:child_process'
 import { readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { LIMITS, boardView, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
+import { LIMITS, boardView, engageMessage, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
 
 const API_PREFIX = '/api/rich-tracking'
 /** Refresh cadence (design §10.2, operator-decided v1): 8 assistant steps OR 6k output tokens since the last write. */
@@ -688,7 +688,7 @@ Then re-align your todo_write list to the remaining work. Unreadable or missing 
     return '[rich-tracking | dismiss] The operator dismissed the tracking board. Stop updating it; do not call tracking_write unless the operator asks to re-open tracking.'
   }
   if (kind === 'play') {
-    return '[rich-tracking | play] PLAY MODE is ON. After this turn ends, and after every subsequent turn, the board will automatically re-engage you with the highest-value next work. Pick the lowest-hanging fruit with the highest value ratio from the pending rows and work on it now.'
+    return '[rich-tracking | play] PLAY MODE is ON: after every completed turn, the board hands you the next move. Your default is to advance the mission yourself — take an open row no delegated task is covering and do its next concrete step, integrate any reports that landed, keep the board current. Pausing is earned by naming what each open row waits on; a named wait list is a plan, and it is how you pause well. Start now with the highest-value uncovered row.'
   }
   if (kind === 'pause') {
     return '[rich-tracking | pause] PLAY MODE is OFF. Work normally; the board will not auto-engage you after turns.'
@@ -787,33 +787,22 @@ function installRefreshReminder(ctx) {
     if (view === null || view.present !== true) return
     if (view.playMode !== true) return
     if (view.allDone === true) return
-    // Find the lowest-hanging fruit: pending/active rows with the highest value ratio
-    const pending = view.rows.filter((row) => row.percent < 100 && row.status !== 'blocked')
-    if (pending.length === 0) return
     // Sort by: active first (already started = closer to done), then by percent descending (higher percent = less work remaining)
-    const ranked = pending.sort((a, b) => (b.status === 'active' ? 1 : 0) - (a.status === 'active' ? 1 : 0) || b.percent - a.percent)
-    const best = ranked[0]
-    const rowsSummary = view.rows.map((row) => `${row.label} ${row.percent}% (${row.status})`).join('; ')
-    const message = createPluginMessage(
-      `[rich-tracking | auto-engage] Play mode is active. Current board: ${rowsSummary}. Pick up the lowest-hanging fruit with the highest value ratio: "${best.label}" (${best.percent}%, ${best.status}) — it is the closest to completion or the easiest to advance. Work on it now, then call tracking_write with refreshed percents.`,
-      'followup',
-      'play-mode engage',
-    )
-    // Dedupe queued engages per session; at fire, re-fold and re-check — a
-    // pause/dismiss inside the window must win — and deliver only if the
-    // agent is still idle (never steer the operator's fresh turn).
+    // Dedupe queued engages per session; at fire, re-fold, re-check, and
+    // build the message from LIVE state — which delegated tasks are still
+    // running decides what counts as uncovered work (pause/dismiss inside
+    // the window must win; deliver only while the agent is idle).
     const prior = engageTimers.get(session.id)
     if (prior !== undefined) clearTimeout(prior)
     const timer = setTimeout(() => {
       engageTimers.delete(session.id)
       try {
-        // Re-read at fire through the same maintained fold (pause/dismiss
-        // inside the window must win); delivers only if the agent is still
-        // idle (never steers the operator's fresh turn).
         const fireView = boardView(runtimeOf(agent.session).state)
         if (fireView === null || fireView.present !== true || fireView.playMode !== true || fireView.allDone === true) return
         if (agent.status !== 'idle') return
-        agent.followup(message)
+        const runningChildren = (typeof ctx.agents?.list === 'function' ? ctx.agents.list() : [])
+          .filter((child) => child?.session?.header?.parentSession === session.id && child.status === 'running')
+        agent.followup(createPluginMessage(engageMessage(fireView, runningChildren), 'followup', 'play-mode engage'))
       } catch { /* agent may have been disposed */ }
     }, 1500)
     engageTimers.set(session.id, timer)

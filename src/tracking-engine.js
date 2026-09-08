@@ -422,3 +422,30 @@ ${method(lanes[0])}
 
 Then call tracking_write and enrich the researched row: detail (<= ${LIMITS.maxDetail} chars), sources (up to ${LIMITS.maxSources} internal digests/receipts), refs (up to ${LIMITS.maxRefs} EXTERNAL competitor/dependency links). Bump the percent ONLY if artifact truth actually changed.` : header
 }
+
+/**
+ * The play-mode engage message (pure, v0.6.2): what the agent receives after
+ * every completed turn while play mode is on. Designed as a POSITIVE decision
+ * procedure (operator doctrine 2026-09-07): the message names what to DO in
+ * priority order, grounded in what is actually in flight, and pause is
+ * EARNED by naming each row's wait — so idleness has nothing to fill and the
+ * easy escape is a named plan or it is nothing. No prohibitions: the wording
+ * never says what to avoid, only what to do next.
+ * @param {object} view - the boardView at fire time.
+ * @param {Array<{id: string}>} runningChildren - live delegated agents of this session.
+ * @returns {string} the engage instruction.
+ */
+export function engageMessage(view, runningChildren) {
+  const rows = view.rows
+    .map((row) => `${row.label} ${row.percent}% (${row.status})`)
+    .join('; ')
+  const inFlight = Array.isArray(runningChildren) && runningChildren.length > 0
+    ? ` In flight: ${runningChildren.length} delegated task${runningChildren.length === 1 ? '' : 's'} (${runningChildren.map((child) => String(child.id).slice(0, 13)).join(', ')}) — their rows are covered; pick work they are holding.`
+    : ''
+  return `[rich-tracking | engage] Play mode — the board advances between your turns. r${view.revision}, ${view.overallPercent}%: ${rows}.${inFlight}
+Your next move, in order:
+1. TAKE an uncovered open row and advance it yourself with the real work (tools, files, tests) — then tracking_write the refreshed percent.
+2. INTEGRATE what landed: when a delegated report or receipt arrived, fold it into its row, verifying the claim against the artifact before any percent moves.
+3. STRENGTHEN the board: evidence strings, item flags, and row prose brought to current reality, and the next wave's first step prepared so it starts instantly.
+Pausing is earned by naming the waits: when every open row has work in flight or a concrete external blocker, list what each row waits on ("w3 waits on the deploy subagent; w4 waits on the operator's API key") and pause the tracker — that named list is the pause.`
+}
