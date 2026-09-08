@@ -1264,6 +1264,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 			return scrim;
 		}
 
+		const TRACKS_ENTRY = "data-dsh-rich-tracking-tracks";
 		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
 		
 		function tracksSidebarRoot() {
