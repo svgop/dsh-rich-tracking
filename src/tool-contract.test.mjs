@@ -19,6 +19,11 @@ test('tracking_write registers with the full gate contract in its description', 
     systemPrompt: { section() {} },
   }
   apply(ctx)
+  const hold = tools.find((t) => t.name === 'tracking_hold')
+  assert.notEqual(hold, undefined, 'tracking_hold registered (the executable hold exit)')
+  for (const fragment of ['genuinely blocked', 'naming what each open row waits on', 'blocks only execution while preparation or verification remains available qualifies as work']) {
+    assert.ok(hold.description.includes(fragment), 'hold description must state: ' + fragment)
+  }
   const write = tools.find((t) => t.name === 'tracking_write')
   assert.notEqual(write, undefined, `tracking_write registered among ${tools.map((t) => t.name).join(', ')}`)
   // Every rule the validator enforces must be stated BEFORE the agent's

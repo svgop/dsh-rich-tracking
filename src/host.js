@@ -17,7 +17,7 @@ import { execFile } from 'node:child_process'
 import { readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { LIMITS, boardView, engageMessage, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
+import { LIMITS, boardView, engageDelayMs, engageMessage, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
 
 const API_PREFIX = '/api/rich-tracking'
 /** Refresh cadence (design §10.2, operator-decided v1): 8 assistant steps OR 6k output tokens since the last write. */
@@ -566,6 +566,51 @@ function trackingWriteTool() {
   }
 }
 
+/** The tracking_hold tool (2026-09-09): the agent's executable exit from
+ * play mode — the named-waits sleep the engage message promises. Appends a
+ * hold decision (the fold turns playMode off, same as pause) carrying the
+ * named waits durably; any later tracking_write lands normally, and the
+ * operator's Play re-arms the loop. */
+function trackingHoldTool() {
+  return {
+    name: 'tracking_hold',
+    description: [
+      "Put the tracking board to sleep: play mode stops re-engaging you after turns. Call it when EVERY open row is genuinely blocked - each row's every slice (execution, preparation, verification, design) waits on something external.",
+      "RULES THE GATE ENFORCES: waits is a non-empty string <= 1000 chars naming what each open row waits on and who owns it (e.g. \"deploy waits on the bindings owner's helm reconciliation; docs waits on the operator's review of the 23 pinned paths\"). A wait that blocks only execution while preparation or verification remains available qualifies as work, and the hold is premature.",
+      "The hold is reversible by reality: a landed receipt, a delegated result, or the operator re-pressing Play wakes the board. While held, a tracking_write still lands normally (it re-derives truth; it re-opens the board without re-arming play mode).",
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['waits'],
+      properties: {
+        waits: { type: 'string', description: 'The named list: what each open row waits on and who owns it, <= 1000 chars.' },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        required: ['held', 'waits'],
+        properties: {
+          held: { type: 'boolean' },
+          waits: { type: 'string' },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Board held - play mode off. Waits: ${value.waits}` }],
+    },
+    async execute(args, exec) {
+      if (exec.agent === undefined) throw new TrackingError('tracking_hold requires an owning agent session', 'TRACKING_NO_AGENT')
+      const waits = typeof args.waits === 'string' ? args.waits.trim().slice(0, 1000) : ''
+      if (waits === '') throw new TrackingError('tracking_hold requires the named waits (what each open row waits on)', 'TRACKING_BAD_HOLD')
+      const session = exec.agent.session
+      session.append('tracking/decision', { kind: 'hold', rowId: null, waits, instruction: `play mode held by the agent: ${waits}`, at: Date.now() })
+      writeTrackingRecord(session)
+      return { held: true, waits }
+    },
+    presentCall: (args) => ({ card: 'generic', title: 'Hold tracking board', kind: 'other', rawInput: args.waits ?? '' }),
+  }
+}
+
 /** The tracking_checkpoint tool (design §6.2, upgraded 2026-09-07: a
  * checkpoint is a prediction-verification pin, not a bare snapshot — the
  * agent narrates the milestone and states a falsifiable expectation for the
@@ -703,7 +748,7 @@ The board after this write describes today's mission, not last week's. Then re-a
     return '[rich-tracking | dismiss] The operator dismissed the tracking board. Stop updating it; do not call tracking_write unless the operator asks to re-open tracking.'
   }
   if (kind === 'play') {
-    return '[rich-tracking | play] PLAY MODE is ON: after every completed turn, the board hands you the next move. Your default is to advance the mission yourself — take an open row no delegated task is covering and do its next concrete step, integrate any reports that landed, keep the board current. Pausing is earned by naming what each open row waits on; a named wait list is a plan, and it is how you pause well. Start now with the highest-value uncovered row.'
+    return "[rich-tracking | play] PLAY MODE is ON: after every completed turn, the board hands you the next move. Your default is to advance the mission yourself - take an open row no delegated task is covering and do its next concrete step, integrate any reports that landed, keep the board current. When every open row's every slice (execution, preparation, verification) is genuinely blocked, call tracking_hold with the named waits - the board sleeps until reality moves; a wait that blocks only execution while preparation remains is work, and the engage's ordered moves (work an uncovered row, integrate landed reports, strengthen the board) come first. Start now with the highest-value uncovered row."
   }
   if (kind === 'pause') {
     return '[rich-tracking | pause] PLAY MODE is OFF. Work normally; the board will not auto-engage you after turns.'
@@ -807,6 +852,17 @@ function installRefreshReminder(ctx) {
     // build the message from LIVE state — which delegated tasks are still
     // running decides what counts as uncovered work (pause/dismiss inside
     // the window must win; deliver only while the agent is idle).
+    // BACKOFF: an engage whose following turn produced no tracking event was
+    // answered with a hold — the next engage coasts (1.5s -> 1m -> 5m -> 15m
+    // -> 30m cap); any tracking write/decision/hold lands back at 1.5s. The
+    // spin (seven holds in ten seconds, observed live 2026-09-09) dies here.
+    const entry = runtimeOf(session)
+    if (entry.engageMark !== undefined) {
+      const since = ownEvents(session).slice(entry.engageMark)
+      const productive = since.some((event) => event.type === 'tracking/write' || event.type === 'tracking/decision' || event.type === 'tracking/checkpoint')
+      entry.engageStreak = productive === true ? 0 : (entry.engageStreak ?? 0) + 1
+      entry.engageMark = undefined
+    }
     const prior = engageTimers.get(session.id)
     if (prior !== undefined) clearTimeout(prior)
     const timer = setTimeout(() => {
@@ -817,9 +873,12 @@ function installRefreshReminder(ctx) {
         if (agent.status !== 'idle') return
         const runningChildren = (typeof ctx.agents?.list === 'function' ? ctx.agents.list() : [])
           .filter((child) => child?.session?.header?.parentSession === session.id && child.status === 'running')
+        // The watermark is taken only when the engage is actually delivered:
+        // the next turn/end measures the events this engage produced.
+        runtimeOf(session).engageMark = ownEvents(agent.session).length
         agent.followup(createPluginMessage(engageMessage(fireView, runningChildren), 'followup', 'play-mode engage'))
       } catch { /* agent may have been disposed */ }
-    }, 1500)
+    }, engageDelayMs(entry.engageStreak ?? 0))
     engageTimers.set(session.id, timer)
   })
 
@@ -833,8 +892,12 @@ function installRefreshReminder(ctx) {
       if (view === null || view.present !== true) return decision // no board, or dismissed
       if (view.allDone === true) return decision // nothing to refresh
 
-      // Staleness backstop (design §10): one reminder per turn.
-      if (entry.remindedThisTurn === false && (entry.steps >= REMINDER_STEPS || entry.outputTokens >= REMINDER_OUTPUT_TOKENS)) {
+      // Staleness backstop (design §10): one reminder per turn. A HELD board
+      // answers with its named waits — the reminder stays quiet so a hold
+      // never pays a no-op re-anchor revision (observed live: r135->r136
+      // "zero artifact truth moved", 2026-09-09).
+      const heldNow = view.lastDecision?.kind === 'hold'
+      if (heldNow !== true && entry.remindedThisTurn === false && (entry.steps >= REMINDER_STEPS || entry.outputTokens >= REMINDER_OUTPUT_TOKENS)) {
         entry.remindedThisTurn = true
         entry.injectedThisTurn = true
         const rows = view.rows.map((row) => `${row.label} ${row.percent}%`).join('; ')
@@ -902,6 +965,7 @@ export function apply(ctx) {
   ctx.systemPrompt.section({ name: 'plugin:rich-tracking', order: 210, text: ANNOUNCEMENT })
   ctx.tools.register(trackingWriteTool())
   ctx.tools.register(trackingCheckpointTool())
+  ctx.tools.register(trackingHoldTool())
   installRefreshReminder(ctx)
 
   // /track (operator decision v0.3): the chat command that forces a ledger

@@ -257,6 +257,7 @@ export function foldTracking(state, event) {
     const data = event.data
     if (data.kind === 'play') return { ...state, playMode: true, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
     if (data.kind === 'pause') return { ...state, playMode: false, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
+    if (data.kind === 'hold') return { ...state, playMode: false, lastDecision: { kind: data.kind, rowId: null, waits: data.waits ?? null, at: data.at } }
     if (data.kind === 'dismiss') return { ...state, dismissedAt: data.at, playMode: false, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
     if (data.kind === 'dismiss-row') {
       const dismissedRows = state.dismissedRows.includes(data.rowId) ? state.dismissedRows : [...state.dismissedRows, data.rowId]
@@ -426,13 +427,26 @@ Then call tracking_write and enrich the researched row: detail (<= ${LIMITS.maxD
 }
 
 /**
- * The play-mode engage message (pure, v0.6.2): what the agent receives after
- * every completed turn while play mode is on. Designed as a POSITIVE decision
- * procedure (operator doctrine 2026-09-07): the message names what to DO in
- * priority order, grounded in what is actually in flight, and pause is
- * EARNED by naming each row's wait — so idleness has nothing to fill and the
- * easy escape is a named plan or it is nothing. No prohibitions: the wording
- * never says what to avoid, only what to do next.
+ * Engage delay schedule (pure): the FIRST engage after a productive turn
+ * fires in 1.5s as before; each consecutive engage that produced no tracking
+ * activity lengthens the next (a named hold must coast, a spin must cost).
+ * @param {number} streak - consecutive engages answered without any tracking event.
+ * @returns {number} milliseconds until the next engage.
+ */
+export function engageDelayMs(streak) {
+  const schedule = [1_500, 60_000, 300_000, 900_000, 1_800_000]
+  return schedule[Math.min(Math.max(streak, 0), schedule.length - 1)]
+}
+
+/**
+ * The play-mode engage message (pure): what the agent receives after a
+ * completed turn while play mode is on. A positive decision procedure
+ * (operator doctrine): it names what to DO in order, grounded in live state.
+ * The pause gate has two exits the agent can EXECUTE: tracking_hold (the
+ * named-waits sleep) and the fact that a wait qualifies only when it blocks
+ * every slice of the row — "owner busy" blocks execution, never the agent's
+ * own preparation, verification, or design work. No prohibitions: the
+ * wording says what to do, and the exits are real capabilities.
  * @param {object} view - the boardView at fire time.
  * @param {Array<{id: string}>} runningChildren - live delegated agents of this session.
  * @returns {string} the engage instruction.
@@ -444,10 +458,19 @@ export function engageMessage(view, runningChildren) {
   const inFlight = Array.isArray(runningChildren) && runningChildren.length > 0
     ? ` In flight: ${runningChildren.length} delegated task${runningChildren.length === 1 ? '' : 's'} (${runningChildren.map((child) => String(child.id).slice(0, 13)).join(', ')}) — their rows are covered; pick work they are holding.`
     : ''
-  return `[rich-tracking | engage] Play mode — the board advances between your turns. r${view.revision}, ${view.overallPercent}%: ${rows}.${inFlight}
+  // The host-ranked default: the first row an idle agent should work. An
+  // anchored agent repeating yesterday's hold needs the choice made for it —
+  // active rows first (closest to done), then highest percent.
+  const workable = view.rows.filter((row) => row.percent < 100 && row.status !== 'blocked')
+  const ranked = [...workable].sort((a, b) => (b.status === 'active' ? 1 : 0) - (a.status === 'active' ? 1 : 0) || b.percent - a.percent)
+  const lead = ranked[0]
+  const leadLine = lead !== undefined
+    ? `Start with "${lead.label}" (${lead.percent}%, ${lead.status}) — the board's own ranking of the closest uncovered work.`
+    : `Every open row shows blocked status: before holding, confirm each blocker still stands — a wait you named earlier may have landed since.`
+  return `[rich-tracking | engage] Play mode — the board advances between your turns. r${view.revision}, ${view.overallPercent}%: ${rows}.${inFlight} ${leadLine}
 Your next move, in order:
-1. TAKE an uncovered open row and advance it yourself with the real work (tools, files, tests) — then tracking_write the refreshed percent.
-2. INTEGRATE what landed: when a delegated report or receipt arrived, fold it into its row, verifying the claim against the artifact before any percent moves.
+1. WORK an uncovered open row with the real work (tools, files, tests) — then tracking_write the refreshed percent. A row with any actionable slice is uncovered: verification, preparation, design, and scaffolding all count as work. A wait blocks a row only when it blocks every slice — an owner's delay blocks execution while leaving your own preparation and verification as available work.
+2. INTEGRATE what landed: when a delegated report or receipt arrived, fold it into its row, verifying the claim against the artifact before any percent moves. A wait named in an earlier hold may have landed since — check the artifact, then re-state the wait or the result.
 3. STRENGTHEN the board: evidence strings, item flags, and row prose brought to current reality, and the next wave's first step prepared so it starts instantly.
-Pausing is earned by naming the waits: when every open row has work in flight or a concrete external blocker, list what each row waits on ("w3 waits on the deploy subagent; w4 waits on the operator's API key") and pause the tracker — that named list is the pause.`
+4. HOLD when every open row's every slice is genuinely blocked: call tracking_hold with the named list of what each row waits on ("w3 waits on the deploy subagent; w4 waits on the operator's API key") — the board sleeps until a landing or the operator re-opens it, and the named list is recorded as the hold's reason.`
 }
