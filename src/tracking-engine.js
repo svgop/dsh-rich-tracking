@@ -451,7 +451,7 @@ export function engageDelayMs(streak) {
  * @param {Array<{id: string}>} runningChildren - live delegated agents of this session.
  * @returns {string} the engage instruction.
  */
-export function engageMessage(view, runningChildren) {
+export function engageMessage(view, runningChildren, streak = 0) {
   const rows = view.rows
     .map((row) => `${row.label} ${row.percent}% (${row.status})`)
     .join('; ')
@@ -467,6 +467,22 @@ export function engageMessage(view, runningChildren) {
   const leadLine = lead !== undefined
     ? `Start with "${lead.label}" (${lead.percent}%, ${lead.status}) — the board's own ranking of the closest uncovered work.`
     : `Every open row shows blocked status: before holding, confirm each blocker still stands — a wait you named earlier may have landed since.`
+  const candidates = ranked.slice(0, 3).map((row) => `"${row.label}" (${row.percent}%, ${row.status})`).join(', ')
+  // ESCALATION (2026-09-09, after the live spin): an identical message every
+  // fire trains a form answer ("Static. Holding."). The engage changes
+  // character with the hold streak — full procedure at first contact, named
+  // candidates next, then an artifact-or-hold challenge — and the host backs
+  // off between fires, so a hold coasts instead of spinning.
+  if (streak >= 3) {
+    return `[rich-tracking | engage — hold streak ${streak}] ${streak} consecutive engages produced no tracking event, and the board still carries open work: ${candidates || rows}.
+Two moves produce an artifact: (1) start the next concrete slice of one of those rows NOW — verification, preparation, or integration of what landed — and tracking_write when it moves; or (2) call tracking_hold with the named waits, one line per open row saying what it waits on and who owns it.
+The hold is the honest exit when every slice of every row is externally blocked. A preparation or verification slice still open on any row is work, and that row belongs in move (1).`
+  }
+  if (streak >= 1) {
+    return `[rich-tracking | engage] Play mode, r${view.revision}, ${view.overallPercent}%. Open and undelegated: ${candidates}.${inFlight}
+Start one of these now: do its next concrete slice yourself — verification, preparation, design, or integrating what landed — then tracking_write the refreshed percent. An owner's delay blocks execution; your own preparation and verification remain available work on every row.
+When every slice of every open row is externally blocked, call tracking_hold with the named waits and the board sleeps until a landing.`
+  }
   return `[rich-tracking | engage] Play mode — the board advances between your turns. r${view.revision}, ${view.overallPercent}%: ${rows}.${inFlight} ${leadLine}
 Your next move, in order:
 1. WORK an uncovered open row with the real work (tools, files, tests) — then tracking_write the refreshed percent. A row with any actionable slice is uncovered: verification, preparation, design, and scaffolding all count as work. A wait blocks a row only when it blocks every slice — an owner's delay blocks execution while leaving your own preparation and verification as available work.

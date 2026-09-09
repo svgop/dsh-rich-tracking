@@ -42,8 +42,18 @@ test('busy engage: live delegated work is called out as covered', () => {
   assert.match(text, /their rows are covered/)
 })
 
+test('escalation: streak tiers change character — named candidates, then artifact-or-hold', () => {
+  const t1 = engageMessage(view, [], 1)
+  assert.match(t1, /Open and undelegated: .W2 fleet. \(55%, active\)/, 'tier 1 names the ranked candidates')
+  assert.match(t1, /call tracking_hold with the named waits/)
+  const t5 = engageMessage(view, [], 5)
+  assert.match(t5, /hold streak 5/, 'tier 3+ names the streak count')
+  assert.match(t5, /Two moves produce an artifact/)
+  assert.match(t5, /A preparation or verification slice still open on any row is work/, 'unearned waits are called out by name')
+})
+
 test('the wording is purely proactive: no prohibitions anywhere', () => {
-  for (const text of [engageMessage(view, []), engageMessage(view, [{ id: 'x' }])]) {
+  for (const text of [engageMessage(view, []), engageMessage(view, [{ id: 'x' }]), engageMessage(view, [], 1), engageMessage(view, [], 2), engageMessage(view, [], 3), engageMessage(view, [], 9)]) {
     assert.doesNotMatch(text, /\b(do not|don't|dont|never|avoid|forbidden|lying|liar|stop)\b/i,
       'engage wording must specify what TO DO — prohibitions are the anti-pattern this design exists to replace')
   }

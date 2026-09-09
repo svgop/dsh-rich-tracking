@@ -876,7 +876,7 @@ function installRefreshReminder(ctx) {
         // The watermark is taken only when the engage is actually delivered:
         // the next turn/end measures the events this engage produced.
         runtimeOf(session).engageMark = ownEvents(agent.session).length
-        agent.followup(createPluginMessage(engageMessage(fireView, runningChildren), 'followup', 'play-mode engage'))
+        agent.followup(createPluginMessage(engageMessage(fireView, runningChildren, runtimeOf(session).engageStreak ?? 0), 'followup', `play-mode engage (streak ${runtimeOf(session).engageStreak ?? 0})`))
       } catch { /* agent may have been disposed */ }
     }, engageDelayMs(entry.engageStreak ?? 0))
     engageTimers.set(session.id, timer)
