@@ -80,3 +80,22 @@ test('hold decision folds: playMode off, waits carried durably', () => {
   assert.equal(held.lastDecision.kind, 'hold')
   assert.equal(held.lastDecision.waits, 'a waits on the operator API key')
 })
+
+test('wake decision folds: playMode re-armed with the waits retained', () => {
+  let state = foldTracking(null, { type: 'tracking/write', data: { revision: 1, rows: [
+    { id: 'a', label: 'A', percent: 10, status: 'active', evidence: 'x' },
+  ], note: null, git: null, commitsAhead: null, at: 1 } })
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'hold', rowId: null, waits: 'a waits on the peer commit', at: 2 } })
+  assert.equal(boardView(state).playMode, false)
+  state = foldTracking(state, { type: 'tracking/decision', data: { kind: 'wake', rowId: null, waits: 'a waits on the peer commit', wakeOn: 'E:/repo/.git', at: 3 } })
+  const woken = boardView(state)
+  assert.equal(woken.playMode, true, 'the wake re-arms the loop')
+  assert.equal(woken.lastDecision.kind, 'wake')
+})
+
+test('the hold step carries the watchdog: wakeOn named in every tier', () => {
+  for (const text of [engageMessage(view, [], 0), engageMessage(view, [], 1), engageMessage(view, [], 4)]) {
+    assert.match(text, /wakeOn/, 'every tier names the watchdog exit')
+  }
+  assert.match(engageMessage(view, [], 0), /a hold with wakeOn IS the watchdog/)
+})

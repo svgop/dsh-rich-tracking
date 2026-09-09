@@ -258,6 +258,7 @@ export function foldTracking(state, event) {
     if (data.kind === 'play') return { ...state, playMode: true, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
     if (data.kind === 'pause') return { ...state, playMode: false, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
     if (data.kind === 'hold') return { ...state, playMode: false, lastDecision: { kind: data.kind, rowId: null, waits: data.waits ?? null, at: data.at } }
+    if (data.kind === 'wake') return { ...state, playMode: true, lastDecision: { kind: data.kind, rowId: null, waits: data.waits ?? null, at: data.at } }
     if (data.kind === 'dismiss') return { ...state, dismissedAt: data.at, playMode: false, lastDecision: { kind: data.kind, rowId: null, at: data.at } }
     if (data.kind === 'dismiss-row') {
       const dismissedRows = state.dismissedRows.includes(data.rowId) ? state.dismissedRows : [...state.dismissedRows, data.rowId]
@@ -475,18 +476,18 @@ export function engageMessage(view, runningChildren, streak = 0) {
   // off between fires, so a hold coasts instead of spinning.
   if (streak >= 3) {
     return `[rich-tracking | engage — hold streak ${streak}] ${streak} consecutive engages produced no tracking event, and the board still carries open work: ${candidates || rows}.
-Two moves produce an artifact: (1) start the next concrete slice of one of those rows NOW — verification, preparation, or integration of what landed — and tracking_write when it moves; or (2) call tracking_hold with the named waits, one line per open row saying what it waits on and who owns it.
+Two moves produce an artifact: (1) start the next concrete slice of one of those rows NOW — verification, preparation, or integration of what landed — and tracking_write when it moves; or (2) call tracking_hold with the named waits and wakeOn — the path that moves when the wait clears; the host becomes the watchdog and wakes you on movement.
 The hold is the honest exit when every slice of every row is externally blocked. A preparation or verification slice still open on any row is work, and that row belongs in move (1).`
   }
   if (streak >= 1) {
     return `[rich-tracking | engage] Play mode, r${view.revision}, ${view.overallPercent}%. Open and undelegated: ${candidates}.${inFlight}
 Start one of these now: do its next concrete slice yourself — verification, preparation, design, or integrating what landed — then tracking_write the refreshed percent. An owner's delay blocks execution; your own preparation and verification remain available work on every row.
-When every slice of every open row is externally blocked, call tracking_hold with the named waits and the board sleeps until a landing.`
+When every slice of every open row is externally blocked, call tracking_hold with the named waits and wakeOn (the path that moves when the wait clears) — the host watches it for you and wakes the board on movement.`
   }
   return `[rich-tracking | engage] Play mode — the board advances between your turns. r${view.revision}, ${view.overallPercent}%: ${rows}.${inFlight} ${leadLine}
 Your next move, in order:
 1. WORK an uncovered open row with the real work (tools, files, tests) — then tracking_write the refreshed percent. A row with any actionable slice is uncovered: verification, preparation, design, and scaffolding all count as work. A wait blocks a row only when it blocks every slice — an owner's delay blocks execution while leaving your own preparation and verification as available work.
 2. INTEGRATE what landed: when a delegated report or receipt arrived, fold it into its row, verifying the claim against the artifact before any percent moves. A wait named in an earlier hold may have landed since — check the artifact, then re-state the wait or the result.
 3. STRENGTHEN the board: evidence strings, item flags, and row prose brought to current reality, and the next wave's first step prepared so it starts instantly.
-4. HOLD when every open row's every slice is genuinely blocked: call tracking_hold with the named list of what each row waits on ("w3 waits on the deploy subagent; w4 waits on the operator's API key") — the board sleeps until a landing or the operator re-opens it, and the named list is recorded as the hold's reason.`
+4. HOLD when every open row's every slice is genuinely blocked: call tracking_hold with the named list of what each row waits on ("w3 waits on the deploy subagent; w4 waits on the operator's API key") plus wakeOn — the file or repo path that moves when the wait clears (a receipt file, a .git directory). The host watches it for you at zero cost and wakes the board the moment it moves; a hold with wakeOn IS the watchdog, and it burns nothing while it waits.`
 }

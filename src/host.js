@@ -14,7 +14,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { readdirSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readdirSync, statSync, mkdirSync, writeFileSync, watchFile, unwatchFile } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { LIMITS, boardView, engageDelayMs, engageMessage, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
@@ -566,6 +566,38 @@ function trackingWriteTool() {
   }
 }
 
+/** Live wake watchers: one per held session (a re-hold replaces its own). */
+const wakeWatchers = new Map()
+
+/**
+ * The zero-cost watchdog: stat-poll the wakeOn path (15s interval, no model
+ * turns); on its first mtime movement, drop the watcher, record a wake
+ * decision (the fold re-arms play mode), and deliver the wake instruction.
+ * A missing path is watched anyway - stat fires on creation.
+ */
+function installWakeWatcher(agent, wakeOn, waits) {
+  const sessionId = agent.session.id
+  const prior = wakeWatchers.get(sessionId)
+  if (prior !== undefined) { unwatchFile(prior.wakeOn, prior.listener); wakeWatchers.delete(sessionId) }
+  let baseline = 0
+  try { baseline = statSync(wakeOn).mtimeMs } catch { /* absent now: creation is the movement */ }
+  const listener = (current) => {
+    if (current.mtimeMs === baseline) return
+    unwatchFile(wakeOn, listener)
+    wakeWatchers.delete(sessionId)
+    try {
+      const session = agent.session
+      session.append('tracking/decision', { kind: 'wake', rowId: null, waits, wakeOn, instruction: `wait cleared by movement: ${wakeOn}`, at: Date.now() })
+      writeTrackingRecord(session)
+      const message = createPluginMessage(`[rich-tracking | wake] The hold's wait moved: "${wakeOn}" changed. Re-read what landed, fold it into its row (tracking_write), and take the next move - play mode is back on.`, 'followup', 'hold wake')
+      if (agent.status === 'running') agent.steer(message)
+      else agent.followup(message)
+    } catch { /* agent may have been disposed */ }
+  }
+  watchFile(wakeOn, { interval: 15_000, persistent: false }, listener)
+  wakeWatchers.set(sessionId, { wakeOn, listener })
+}
+
 /** The tracking_hold tool (2026-09-09): the agent's executable exit from
  * play mode — the named-waits sleep the engage message promises. Appends a
  * hold decision (the fold turns playMode off, same as pause) carrying the
@@ -577,7 +609,7 @@ function trackingHoldTool() {
     description: [
       "Put the tracking board to sleep: play mode stops re-engaging you after turns. Call it when EVERY open row is genuinely blocked - each row's every slice (execution, preparation, verification, design) waits on something external.",
       "RULES THE GATE ENFORCES: waits is a non-empty string <= 1000 chars naming what each open row waits on and who owns it (e.g. \"deploy waits on the bindings owner's helm reconciliation; docs waits on the operator's review of the 23 pinned paths\"). A wait that blocks only execution while preparation or verification remains available qualifies as work, and the hold is premature.",
-      "The hold is reversible by reality: a landed receipt, a delegated result, or the operator re-pressing Play wakes the board. While held, a tracking_write still lands normally (it re-derives truth; it re-opens the board without re-arming play mode).",
+      "The hold is reversible by reality: pass wakeOn (the path that moves when the wait clears - a receipt file, a .git directory) and the host watches it for you, waking the board the moment it moves; a landed result or the operator re-pressing Play wakes it too. While held, a tracking_write still lands normally (it re-derives truth; it re-opens the board without re-arming play mode).",
     ].join(' '),
     parameters: {
       type: 'object',
@@ -585,6 +617,7 @@ function trackingHoldTool() {
       required: ['waits'],
       properties: {
         waits: { type: 'string', description: 'The named list: what each open row waits on and who owns it, <= 1000 chars.' },
+        wakeOn: { type: 'string', description: "The file or directory path that changes when the wait clears (a receipt file, a repo's .git directory). The host watches it and wakes the board the moment it moves - the hold becomes the watchdog at zero cost. Absolute path, <= 300 chars." },
       },
     },
     output: {
@@ -594,6 +627,7 @@ function trackingHoldTool() {
         properties: {
           held: { type: 'boolean' },
           waits: { type: 'string' },
+          watching: { type: 'string' },
         },
       },
       render: (_args, value) => [{ type: 'text', text: `Board held - play mode off. Waits: ${value.waits}` }],
@@ -602,10 +636,12 @@ function trackingHoldTool() {
       if (exec.agent === undefined) throw new TrackingError('tracking_hold requires an owning agent session', 'TRACKING_NO_AGENT')
       const waits = typeof args.waits === 'string' ? args.waits.trim().slice(0, 1000) : ''
       if (waits === '') throw new TrackingError('tracking_hold requires the named waits (what each open row waits on)', 'TRACKING_BAD_HOLD')
+      const wakeOn = typeof args.wakeOn === 'string' ? args.wakeOn.trim().slice(0, 300) : null
       const session = exec.agent.session
-      session.append('tracking/decision', { kind: 'hold', rowId: null, waits, instruction: `play mode held by the agent: ${waits}`, at: Date.now() })
+      session.append('tracking/decision', { kind: 'hold', rowId: null, waits, ...(wakeOn !== null && wakeOn !== '' ? { wakeOn } : {}), instruction: `play mode held by the agent: ${waits}`, at: Date.now() })
       writeTrackingRecord(session)
-      return { held: true, waits }
+      if (wakeOn !== null && wakeOn !== '') installWakeWatcher(exec.agent, wakeOn, waits)
+      return { held: true, waits, ...(wakeOn !== null && wakeOn !== '' ? { watching: wakeOn } : {}) }
     },
     presentCall: (args) => ({ card: 'generic', title: 'Hold tracking board', kind: 'other', rawInput: args.waits ?? '' }),
   }
@@ -858,9 +894,7 @@ function installRefreshReminder(ctx) {
     // spin (seven holds in ten seconds, observed live 2026-09-09) dies here.
     const entry = runtimeOf(session)
     if (entry.engageMark !== undefined) {
-      const since = ownEvents(session).slice(entry.engageMark)
-      const productive = since.some((event) => event.type === 'tracking/write' || event.type === 'tracking/decision' || event.type === 'tracking/checkpoint')
-      entry.engageStreak = productive === true ? 0 : (entry.engageStreak ?? 0) + 1
+      entry.engageStreak = boardSignature(boardView(entry.state)) === entry.engageSignature ? (entry.engageStreak ?? 0) + 1 : 0
       entry.engageMark = undefined
     }
     const prior = engageTimers.get(session.id)
@@ -874,8 +908,12 @@ function installRefreshReminder(ctx) {
         const runningChildren = (typeof ctx.agents?.list === 'function' ? ctx.agents.list() : [])
           .filter((child) => child?.session?.header?.parentSession === session.id && child.status === 'running')
         // The watermark is taken only when the engage is actually delivered:
-        // the next turn/end measures the events this engage produced.
+        // the next turn/end compares the board SIGNATURE — a write that moves
+        // no percent, status, or row (a heartbeat re-stamp) counts as a hold,
+        // keeping the backoff honest (live-run lesson 2026-09-09: heartbeat
+        // writes were resetting the streak and the loop span at full cadence).
         runtimeOf(session).engageMark = ownEvents(agent.session).length
+        runtimeOf(session).engageSignature = boardSignature(fireView)
         agent.followup(createPluginMessage(engageMessage(fireView, runningChildren, runtimeOf(session).engageStreak ?? 0), 'followup', `play-mode engage (streak ${runtimeOf(session).engageStreak ?? 0})`))
       } catch { /* agent may have been disposed */ }
     }, engageDelayMs(entry.engageStreak ?? 0))
@@ -926,6 +964,14 @@ function installRefreshReminder(ctx) {
       return decision
     })()
   })
+}
+
+/** Board truth signature: what a REAL write moves — percents, statuses, rows.
+ * Revision and notes are excluded on purpose: a heartbeat re-stamp bumps both
+ * while changing nothing, and must count as a hold for the backoff. */
+function boardSignature(view) {
+  if (view === null || view?.present !== true) return 'absent'
+  return [view.overallPercent, ...view.rows.map((row) => `${row.id}:${row.percent}:${row.status}:${row.items?.length ?? 0}`)].join('|')
 }
 
 /** Whether the trailing assembly messages already carry tracking context (dedupe). */
