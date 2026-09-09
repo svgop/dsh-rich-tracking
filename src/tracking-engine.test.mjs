@@ -311,7 +311,10 @@ test('researchContext: ONE subagent, all lanes queued into it up front via send_
   assert.match(brief, /makes a todo list of the lanes/)
   assert.match(brief, /work the lanes one at a time, in order/)
   // Every lane payload is self-contained: each carries the research method.
-  assert.equal((brief.match(/TASK: study 3-6 competitors/g) ?? []).length, 3, 'all three lanes carry the full method')
+  assert.equal((brief.match(/TASK — research this row two-sided/g) ?? []).length, 3, 'all three lanes carry the full method')
+  assert.match(brief, /A\. INSIDE the system: read the code, logic, and systems this row touches/)
+  assert.match(brief, /B\. OUTSIDE the system: study 3-6 competitors/)
+  assert.match(brief, /C\. CONCLUDE against both sides/)
   assert.match(brief, /LANE 1 — RESEARCH ROW "W2 fleet rebuild" \(id "w2-fleet", 40%, active\)/)
   assert.match(brief, /note: mid-flight|Latest note: mid-flight/)
   assert.match(brief, /EXTEND it, do not discard it/, 'existing detail is preserved by instruction')
