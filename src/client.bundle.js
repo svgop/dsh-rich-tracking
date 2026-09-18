@@ -1020,7 +1020,12 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 .trk2-act:disabled{opacity:.4;cursor:default}
 .trk2-foot2{display:flex;align-items:center;border-top:1px solid var(--dsw-alias-border-l1);padding:6px 12px}
 .trk2-footStatus{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-empty{padding:24px 16px;color:var(--dsw-alias-label-tertiary);font-size:13px;text-align:center}`;
+.trk2-empty{padding:24px 16px;color:var(--dsw-alias-label-tertiary);font-size:13px;text-align:center}
+/* Hosted main-panel mode (sidebar.panellist + main slots). */
+.trk2-main{height:100%;overflow:auto;box-sizing:border-box;background:var(--dsw-specific-sidebar-fill);padding:24px;display:flex;justify-content:center;align-items:flex-start}
+.trk2-main .trk2-scrim{position:static;z-index:auto;background:0 0;padding:0;display:flex;flex-direction:column;width:100%;max-width:880px;height:100%}
+.trk2-main .trk2-card{flex:1;min-height:0;max-height:none;box-shadow:none}
+.trk2-main .trk2-closeBtn{display:none}`;
 
 		const tt = (key) => (/^zh/i.test(navigator.language ?? "") ? zh : en)[key] ?? en[key] ?? key;
 
@@ -1361,86 +1366,40 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 			const autoRefresh = window.setInterval(() => { if (busy === false) load(); }, 12_000);
 			const innerClose = onClose;
 			onClose = () => { window.clearInterval(autoRefresh); innerClose(); };
+			// Hosted main-panel unmount stops the poller through this hook.
+			scrim.dispose = () => { window.clearInterval(autoRefresh); };
 			return scrim;
 		}
 
-		const TRACKS_ENTRY = "data-dsh-rich-tracking-tracks";
-		const TRACKS_FAMILY = ["[data-dsh-taskboard-entry]", "[data-dsh-ssh-entry]", "[data-dsh-skill-explorer-entry]", "[data-dsh-generative-ideas-entry]", "[data-dsh-rich-context-entry]", `[${TRACKS_ENTRY}]`];
-		
-		function tracksSidebarRoot() {
-			const column = document.querySelector('[data-pane="sidebar"], [class*="sidebarCol"]');
-			if (column === null) return undefined;
-			return column.querySelector('[class*="logoRow"]')?.parentElement ?? column.firstElementChild ?? undefined;
-		}
-		function tracksNewSessionButton(root) {
-			const nested = root.querySelector('button[class*="newSession"]');
-			if (nested !== null) return nested;
-			for (const child of root.children) if (child.tagName === "BUTTON") return child;
-			return undefined;
-		}
-		function mountTracksEntry(onToggle) {
-			if (document.querySelector(`[${TRACKS_ENTRY}]`) !== null) return () => {};
-			const entry = document.createElement("button");
-			entry.type = "button";
-			entry.setAttribute(TRACKS_ENTRY, "");
-			entry.setAttribute("data-dsh-plugin", "rich-tracking");
-			entry.setAttribute("data-dsh-part", "tracks-sidebar-entry");
-			entry.className = "trk2-entry";
-			const icon = document.createElement("span");
-			icon.className = "trk2-entryIcon";
-			icon.innerHTML = TRACKS_ICON;
-			const text = document.createElement("span");
-			text.className = "trk2-entryLabel";
-			text.textContent = tt("tracks.entry");
-			entry.title = tt("tracks.tooltip");
-			entry.append(icon, text);
-			entry.addEventListener("click", onToggle);
-			let root, placed = false;
-			const place = () => {
-				const button = root === undefined ? undefined : tracksNewSessionButton(root);
-				if (button === undefined) return false;
-				const row = button.closest('[class*="logoRow"]');
-				const base = row !== null && row.parentElement === root ? row : button;
-				const family = Array.from(root.children).filter((el) => el instanceof HTMLElement && el.matches(TRACKS_FAMILY.join(", ")));
-				const anchor = family.length > 0 ? family[family.length - 1].nextElementSibling : base.nextElementSibling;
-				root.insertBefore(entry, anchor);
-				return true;
-			};
-			const tryPlace = () => {
-				if (root !== undefined && !root.isConnected) { rootObserver.disconnect(); root = undefined; placed = false; }
-				if (placed && document.body.contains(entry)) return;
-				root ??= tracksSidebarRoot();
-				if (root === undefined) return;
-				placed = place();
-				if (placed) rootObserver.observe(root, { childList: true, subtree: true });
-			};
-			const waitObserver = new MutationObserver(tryPlace);
-			waitObserver.observe(document.body, { childList: true, subtree: true });
-			const rootObserver = new MutationObserver(() => {
-				if (root === undefined || !root.isConnected) { placed = false; tryPlace(); return; }
-				if (!root.contains(entry)) placed = place();
+		//#region lib/panel-slot.js
+		// Sanctioned surface (0.1.6+): sidebar.panellist row + keyed main panel,
+		// mirroring the built-in Plugins entry. The shell owns the row chrome;
+		// no DOM grafting into React-managed sidebar rows.
+		const PANEL_ID = "rich-tracking-tracks";
+		const ICON_PATHS = TRACKS_ICON.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "");
+		function PanelIcon({ size }) {
+			return (0, react_jsx_runtime.jsx)("svg", {
+				viewBox: "0 0 16 16", width: size ?? 18, height: size ?? 18,
+				fill: "none", stroke: "currentColor", strokeWidth: 1.3,
+				strokeLinecap: "round", strokeLinejoin: "round",
+				"aria-hidden": true,
+				dangerouslySetInnerHTML: { __html: ICON_PATHS },
 			});
-			tryPlace();
-			return () => { waitObserver.disconnect(); rootObserver.disconnect(); entry.remove(); };
 		}
-		
-		function installTracksView(ctx) {
-			installTracksStyles();
-			let panel = null;
-			const onKey = (event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } };
-			const close = () => {
-				if (panel !== null) { panel.remove(); panel = null; }
-				document.removeEventListener("keydown", onKey, true);
-			};
-			const toggle = () => {
-				if (panel !== null) { close(); return; }
-				panel = createTracksPanel(ctx.sessions, () => close());
-				document.body.appendChild(panel);
-				document.addEventListener("keydown", onKey, true);
-			};
-			const disposeEntry = mountTracksEntry(toggle);
-			return () => { disposeEntry(); close(); };
+		function TracksMainPanel({ sessions }) {
+			return (0, react_jsx_runtime.jsx)("div", {
+				className: "trk2-main",
+				ref: (node) => {
+					if (node === null) return;
+					const panel = createTracksPanel(sessions, () => {});
+					panel.classList.add("trk2-hosted");
+					node.append(panel);
+					// React 19 ref cleanup: stops the 12s scanner on unmount.
+					return () => { panel.dispose?.(); };
+				},
+			});
 		}
+		//#endregion
 		
 
 		function installTracksStyles() {
@@ -1455,6 +1414,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 	//#region lib/index.js
 		const inject = ["slots", "locale", "sessions"];
 		function apply(ctx) {
+			installTracksStyles();
 			ctx.effect(() => ctx.locale.register(NS, { en, zh }), "rich-tracking: dictionaries");
 			ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
 				name: "conversation.input.dock",
@@ -1462,7 +1422,21 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 				order: 5,
 				locale: NS
 			}, TrackingDock));
-			ctx.effect(() => installTracksView(ctx), "rich-tracking: tracks sidebar view");
+			// Sidebar + panel ride the sanctioned slots (see lib/panel-slot.js):
+			// the shell owns the row chrome and panel selection.
+			ctx.slots.inject("main", () => ctx.slots.register({
+				name: "main",
+				key: PANEL_ID,
+				locale: NS,
+				inject: () => ({ sessions: ctx.sessions })
+			}, TracksMainPanel));
+			ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+				name: "sidebar.panellist",
+				id: PANEL_ID,
+				order: 60,
+				label: () => tt("tracks.entry"),
+				locale: NS
+			}, PanelIcon));
 		}
 		exports.apply = apply;
 		exports.inject = inject;
