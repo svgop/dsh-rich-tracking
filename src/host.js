@@ -14,8 +14,8 @@
  */
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { readdirSync, statSync, mkdirSync, writeFileSync, watchFile, unwatchFile } from 'node:fs'
-import { join } from 'node:path'
+import { readdirSync, statSync, mkdirSync, writeFileSync, readFileSync, watchFile, unwatchFile } from 'node:fs'
+import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { LIMITS, boardView, engageDelayMs, engageMessage, foldTracking, lastTrackingEvent, ledgerContext, nextCheckpointId, nextRevision, overallPercentOf, researchContext, validateBoard } from './tracking-engine.js'
 
@@ -50,37 +50,40 @@ function seedBoundary(session) {
  * Per-session workspace record: after every tracking mutation the full
  * folded board, checkpoint timeline, and decision log land at
  * <workspace>/.dsh/tracking/<sessionId>.json — the project-local track
- * record any agent or human reads with ordinary file tools (the session
- * event log stays the durable source of truth; this file is its readable
- * shadow). Best-effort: a write failure never blocks the mutation.
+ * record any agent or human reads with ordinary file tools. v2 also carries
+ * the full event journal, which is what makes the plugin runtime-portable:
+ * on upstream DSH (>= 0.2.0) the session log cannot carry plugin events, so
+ * this record IS the durable source of truth and the hydration seed.
+ * Best-effort: a write failure never blocks the mutation.
  */
 function writeTrackingRecord(session) {
   const cwd = session?.header?.cwd
   if (typeof cwd !== 'string' || cwd === '') return
   try {
-    const events = ownEvents(session)
+    const journal = trackingJournal(session)
     let state = null
     const checkpoints = []
     const decisions = []
-    for (const event of events) {
+    for (const event of journal) {
       if (event.type === 'tracking/checkpoint') checkpoints.push({ id: event.data.id, label: event.data.label, git: event.data.git, commitsSincePrior: event.data.commitsSincePrior, at: event.data.at })
       else if (event.type === 'tracking/decision') decisions.push({ kind: event.data.kind, rowId: event.data.rowId ?? null, at: event.data.at })
       state = foldTracking(state, event)
     }
     const view = boardView(state)
     const record = {
-      v: 1,
+      v: 2,
       sessionId: String(session.header?.id ?? 'unknown'),
       workspace: cwd,
       updatedAt: Date.now(),
       ...(view !== null ? { board: view } : { present: false }),
       checkpoints,
       decisions,
+      events: journal,
     }
     const dir = join(cwd, '.dsh', 'tracking')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, record.sessionId + '.json'), JSON.stringify(record, null, 2) + String.fromCharCode(10), 'utf8')
-  } catch { /* best-effort shadow: the event log is the durable record */ }
+  } catch { /* best-effort shadow: the journal is the in-memory source */ }
 }
 
 function ownEvents(session) {
@@ -88,6 +91,88 @@ function ownEvents(session) {
   const events = Array.isArray(session?.events) ? session.events : []
   const boundary = seedBoundary(session)
   return boundary > 0 ? events.slice(boundary) : events
+}
+
+// ── Session-event admission (0.2.0 desktop contract) ─────────────────────────
+// Upstream DSH (>= 0.2.0-rc, the desktop app) removed the sessionEventTypes
+// registration service and admits out-of-repo session events ONLY through the
+// persisted `ignorable` envelope marker — which Session.append cannot set.
+// A bare unknown append would write a row every later read refuses, poisoning
+// the whole log. The fork (svgop harness behind the web profile) still runs
+// the registration service. So:
+//  - the STATIC inject no longer names sessionEventTypes: a static inject on a
+//    missing service leaves the fiber PENDING forever — apply() never ran and
+//    every route 404'd (the "host process predates Tracks" bug);
+//  - the DEFERRED inject in apply() still registers the types when the service
+//    exists (fork), switching session.append back on there;
+//  - elsewhere the plugin journals its events itself and persists them in the
+//    v2 workspace track record; the session log stays untouched upstream.
+
+/** True once the fork's sessionEventTypes service has accepted our types. */
+const sessionEventsAdmitted = { value: false }
+
+/** The plugin's own event stream per Session object (hydrated once). */
+const journals = new WeakMap()
+
+/** Path guard shared by every record read: session ids join the filesystem. */
+function safeSessionId(sessionId) {
+  return typeof sessionId === 'string' && sessionId !== '' && /[/\\]|\.\./.test(sessionId) === false
+}
+
+/** Read one session's track record (v1 or v2), or null when absent/broken. */
+function readTrackingRecord(cwd, sessionId) {
+  if (typeof cwd !== 'string' || cwd === '' || safeSessionId(sessionId) === false) return null
+  try {
+    const path = join(cwd, '.dsh', 'tracking', `${sessionId}.json`)
+    const parsed = JSON.parse(readFileSync(path, 'utf8'))
+    return typeof parsed === 'object' && parsed !== null ? parsed : null
+  } catch { return null }
+}
+
+/**
+ * The session's tracking journal: v2 record events when present (they are
+ * written after EVERY mutation on every runtime), else the session log's own
+ * tracking events (fork-era sessions and pre-v2 records).
+ */
+function trackingJournal(session) {
+  let journal = journals.get(session)
+  if (journal !== undefined) return journal
+  journal = []
+  const cwd = session?.header?.cwd
+  const record = cwd === undefined ? null : readTrackingRecord(cwd, String(session?.header?.id ?? ''))
+  if (record !== null && Array.isArray(record.events)) {
+    for (const event of record.events) if (TRACKING_EVENT_TYPE_SET.has(event?.type)) journal.push(event)
+  } else {
+    for (const event of ownEvents(session)) if (TRACKING_EVENT_TYPE_SET.has(event.type)) journal.push(event)
+  }
+  journals.set(session, journal)
+  return journal
+}
+
+/**
+ * Record one tracking mutation on every runtime: journal + runtime fold +
+ * durable v2 record always; the session log only under fork admission (the
+ * upstream log must stay free of unknown required events).
+ */
+function commitTrackingEvent(session, type, data) {
+  if (sessionEventsAdmitted.value === true) {
+    try { session.append(type, data) } catch { /* a failed log append must not lose the journal */ }
+  }
+  const event = { type, time: Date.now(), data }
+  // Order matters: the runtime's first touch folds the PRIOR journal, so it
+  // must be materialized before the push — otherwise a first mutation on a
+  // cold session would fold the new event twice.
+  const journal = trackingJournal(session)
+  const entry = trackingRuntimeOf(session)
+  journal.push(event)
+  try {
+    entry.state = foldTracking(entry.state, event)
+    if (type === 'tracking/write') {
+      entry.steps = 0
+      entry.outputTokens = 0
+    }
+  } catch { /* poison-pill guard: a malformed event never kills the loop */ }
+  writeTrackingRecord(session)
 }
 
 // ── Tracks view: every board, every workspace ────────────────────────────────
@@ -154,9 +239,9 @@ async function decompressLog(file) {
 async function scanSessionFile(file) {
   const folded = await foldSessionFile(file)
   if (folded === null) return null
-  const { state, cwd, title } = folded
-  let view = null
-  try { view = boardView(state) } catch { view = null }
+  const { state, cwd, title, viewOverride } = folded
+  let view = viewOverride
+  if (view == null) { try { view = boardView(state) } catch { view = null } }
   if (view === null || view.present !== true) return null
   return {
     cwd,
@@ -181,6 +266,10 @@ async function scanSessionFile(file) {
  * Tracks scan (all boards) and the /board endpoint (one session's full view
  * — the dock's persistence fallback when the live projection reads absent).
  * Returns null when the log cannot be decompressed.
+ * Record-aware (0.2.0 contract): a v2 track record's event journal is the
+ * authoritative fold (upstream logs carry no tracking events at all); a v1
+ * record's stored board synthesizes a view when the log fold came up empty
+ * (fork-era sessions pre-dating v2 records).
  */
 async function foldSessionFile(file) {
   const text = await decompressLog(file)
@@ -214,7 +303,26 @@ async function foldSessionFile(file) {
       try { state = foldTracking(state, event) } catch { state = state ?? null }
     }
   }
-  return { state, cwd, title }
+  // The v2 record wins when it exists: it is written after every mutation on
+  // every runtime, so it is at least as fresh as the log fold and is the only
+  // source on upstream runtimes.
+  let viewOverride = null
+  if (cwd !== null) {
+    const sessionId = basename(dirname(file))
+    const record = readTrackingRecord(cwd, sessionId)
+    if (record !== null) {
+      if (Array.isArray(record.events) && record.events.length > 0) {
+        state = null
+        for (const event of record.events) {
+          if (TRACKING_EVENT_TYPE_SET.has(event?.type) !== true) continue
+          try { state = foldTracking(state, event) } catch { state = state ?? null }
+        }
+      } else if (state === null && record.board?.present === true) {
+        viewOverride = record.board
+      }
+    }
+  }
+  return { state, cwd, title, viewOverride }
 }
 
 /**
@@ -254,6 +362,7 @@ async function storedBoardFor(sessionId) {
     if (logName === undefined) continue
     const folded = await foldSessionFile(join(sessionDir, logName))
     if (folded === null) return null
+    if (folded.viewOverride != null) return folded.viewOverride
     try { return boardView(folded.state) } catch { return null }
   }
   return null
@@ -332,7 +441,7 @@ async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
 }
 
 export const name = 'dsh-rich-tracking'
-export const inject = ['tools', 'webServer', 'agents', 'systemPrompt', 'sessionEventTypes']
+export const inject = ['tools', 'webServer', 'agents', 'systemPrompt']
 
 // These records shape the tracking projection and are required for faithful
 // history reads. The core persistence guard admits them only while this plugin
@@ -342,6 +451,8 @@ const TRACKING_EVENT_TYPES = Object.freeze([
   'tracking/checkpoint',
   'tracking/decision',
 ])
+/** Membership view of the frozen batch above. */
+const TRACKING_EVENT_TYPE_SET = new Set(TRACKING_EVENT_TYPES)
 
 /**
  * Percent-honesty doctrine (design §11): the board is a commitment device —
@@ -540,11 +651,10 @@ function trackingWriteTool() {
       const gitState = await probeGitLight(cwd)
       // Revision is minted AFTER the await, immediately before the append, so
       // parallel tool calls cannot mint duplicate revisions (review P3).
-      const revision = nextRevision(ownEvents(session))
-      const lastCheckpoint = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
+      const revision = nextRevision(trackingJournal(session))
+      const lastCheckpoint = lastTrackingEvent(trackingJournal(session), 'tracking/checkpoint')?.data ?? null
       const ahead = await commitsAheadOf(lastCheckpoint, gitState?.head ?? null, cwd)
-      session.append('tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() })
-      writeTrackingRecord(session)
+      commitTrackingEvent(session, 'tracking/write', { revision, rows: check.board.rows, note: check.board.note, git: gitState, commitsAhead: ahead, at: Date.now() })
       // The echo is an ACKNOWLEDGEMENT, not a mirror: the model just sent the
       // whole board (items, evidence, up-to-4k details) seconds ago — echoing
       // it back costs that many tokens on every living-ledger write. One
@@ -587,8 +697,7 @@ function installWakeWatcher(agent, wakeOn, waits) {
     wakeWatchers.delete(sessionId)
     try {
       const session = agent.session
-      session.append('tracking/decision', { kind: 'wake', rowId: null, waits, wakeOn, instruction: `wait cleared by movement: ${wakeOn}`, at: Date.now() })
-      writeTrackingRecord(session)
+      commitTrackingEvent(session, 'tracking/decision', { kind: 'wake', rowId: null, waits, wakeOn, instruction: `wait cleared by movement: ${wakeOn}`, at: Date.now() })
       const message = createPluginMessage(`[rich-tracking | wake] The hold's wait moved: "${wakeOn}" changed. Re-read what landed, fold it into its row (tracking_write), and take the next move - play mode is back on.`, 'followup', 'hold wake')
       if (agent.status === 'running') agent.steer(message)
       else agent.followup(message)
@@ -638,8 +747,7 @@ function trackingHoldTool() {
       if (waits === '') throw new TrackingError('tracking_hold requires the named waits (what each open row waits on)', 'TRACKING_BAD_HOLD')
       const wakeOn = typeof args.wakeOn === 'string' ? args.wakeOn.trim().slice(0, 300) : null
       const session = exec.agent.session
-      session.append('tracking/decision', { kind: 'hold', rowId: null, waits, ...(wakeOn !== null && wakeOn !== '' ? { wakeOn } : {}), instruction: `play mode held by the agent: ${waits}`, at: Date.now() })
-      writeTrackingRecord(session)
+      commitTrackingEvent(session, 'tracking/decision', { kind: 'hold', rowId: null, waits, ...(wakeOn !== null && wakeOn !== '' ? { wakeOn } : {}), instruction: `play mode held by the agent: ${waits}`, at: Date.now() })
       if (wakeOn !== null && wakeOn !== '') installWakeWatcher(exec.agent, wakeOn, waits)
       return { held: true, waits, ...(wakeOn !== null && wakeOn !== '' ? { watching: wakeOn } : {}) }
     },
@@ -713,12 +821,11 @@ function trackingCheckpointTool() {
       const summary = typeof args.summary === 'string' && args.summary.trim() !== '' ? args.summary.trim().slice(0, LIMITS.maxCheckpointSummary) : null
       const expect = typeof args.expect === 'string' && args.expect.trim() !== '' ? args.expect.trim().slice(0, LIMITS.maxCheckpointExpect) : null
       const gitState = await probeGitFull(session.header?.cwd)
-      const rows = lastTrackingEvent(ownEvents(session), 'tracking/write')?.data.rows ?? []
-      const prior = lastTrackingEvent(ownEvents(session), 'tracking/checkpoint')?.data ?? null
+      const rows = lastTrackingEvent(trackingJournal(session), 'tracking/write')?.data.rows ?? []
+      const prior = lastTrackingEvent(trackingJournal(session), 'tracking/checkpoint')?.data ?? null
       const commitsSincePrior = await commitsAheadOf(prior, gitState?.head ?? null, session.header?.cwd)
-      const id = nextCheckpointId(ownEvents(session))
-      session.append('tracking/checkpoint', { id, label, summary, expect, git: gitState, rows, commitsSincePrior, at: Date.now() })
-      writeTrackingRecord(session)
+      const id = nextCheckpointId(trackingJournal(session))
+      commitTrackingEvent(session, 'tracking/checkpoint', { id, label, summary, expect, git: gitState, rows, commitsSincePrior, at: Date.now() })
       return { id, label, summary, expect, priorExpectation: typeof prior?.expect === 'string' && prior.expect !== '' ? prior.expect : null, git: gitState, boardPercent: overallPercentOf(rows), rows: rows.length }
     },
     presentCall: (args) => ({ card: 'generic', title: 'Take tracking checkpoint', kind: 'other', rawInput: args.label ?? '' }),
@@ -825,33 +932,12 @@ function guard(req, res) {
 
 /** The refresh loop (design §10): log-derived counters + one reminder per turn. */
 function installRefreshReminder(ctx) {
-  /** Per-session runtime: folded projection STATE (not the view — folds chain), staleness counters, turn caps. */
-  const runtime = new WeakMap()
-
-  const runtimeOf = (session) => {
-    let entry = runtime.get(session)
-    if (entry === undefined) {
-      // First touch folds the FULL log: constructor seeds (resume/fork) never
-      // fire session/event, so incremental-only would miss pre-existing boards.
-      let state = null
-      for (const event of ownEvents(session)) state = foldTracking(state, event)
-      entry = { state, steps: 0, outputTokens: 0, remindedThisTurn: false, injectedThisTurn: false }
-      runtime.set(session, entry)
-    }
-    return entry
-  }
-
   ctx.on('session/event', (session, event) => {
     let entry
-    try { entry = runtimeOf(session) } catch { return }
-    if (event.type === 'tracking/write' || event.type === 'tracking/checkpoint' || event.type === 'tracking/decision') {
-      entry.state = foldTracking(entry.state, event)
-      if (event.type === 'tracking/write') {
-        entry.steps = 0
-        entry.outputTokens = 0
-      }
-      return
-    }
+    try { entry = trackingRuntimeOf(session) } catch { return }
+    // Tracking mutations fold through commitTrackingEvent on every runtime
+    // (upstream journals them; the fork additionally appends them to the log,
+    // and this listener must not double-fold what it already folded).
     if (event.type === 'turn/start') {
       entry.remindedThisTurn = false
       entry.injectedThisTurn = false
@@ -879,7 +965,7 @@ function installRefreshReminder(ctx) {
     // — a full log re-fold per completed turn is O(events) on the hottest
     // hook in the loop. Children never engage a parent's inherited board:
     // the runtime folds the session's OWN (post-seed) events only.
-    const view = boardView(runtimeOf(session).state)
+    const view = boardView(trackingRuntimeOf(session).state)
     if (view === null || view.present !== true) return
     if (view.playMode !== true) return
     if (view.allDone === true) return
@@ -892,7 +978,7 @@ function installRefreshReminder(ctx) {
     // answered with a hold — the next engage coasts (1.5s -> 1m -> 5m -> 15m
     // -> 30m cap); any tracking write/decision/hold lands back at 1.5s. The
     // spin (seven holds in ten seconds, observed live 2026-09-09) dies here.
-    const entry = runtimeOf(session)
+    const entry = trackingRuntimeOf(session)
     if (entry.engageMark !== undefined) {
       entry.engageStreak = boardSignature(boardView(entry.state)) === entry.engageSignature ? (entry.engageStreak ?? 0) + 1 : 0
       entry.engageMark = undefined
@@ -902,7 +988,7 @@ function installRefreshReminder(ctx) {
     const timer = setTimeout(() => {
       engageTimers.delete(session.id)
       try {
-        const fireView = boardView(runtimeOf(agent.session).state)
+        const fireView = boardView(trackingRuntimeOf(agent.session).state)
         if (fireView === null || fireView.present !== true || fireView.playMode !== true || fireView.allDone === true) return
         if (agent.status !== 'idle') return
         const runningChildren = (typeof ctx.agents?.list === 'function' ? ctx.agents.list() : [])
@@ -912,9 +998,9 @@ function installRefreshReminder(ctx) {
         // no percent, status, or row (a heartbeat re-stamp) counts as a hold,
         // keeping the backoff honest (live-run lesson 2026-09-09: heartbeat
         // writes were resetting the streak and the loop span at full cadence).
-        runtimeOf(session).engageMark = ownEvents(agent.session).length
-        runtimeOf(session).engageSignature = boardSignature(fireView)
-        agent.followup(createPluginMessage(engageMessage(fireView, runningChildren, runtimeOf(session).engageStreak ?? 0), 'followup', `play-mode engage (streak ${runtimeOf(session).engageStreak ?? 0})`))
+        trackingRuntimeOf(session).engageMark = ownEvents(agent.session).length
+        trackingRuntimeOf(session).engageSignature = boardSignature(fireView)
+        agent.followup(createPluginMessage(engageMessage(fireView, runningChildren, trackingRuntimeOf(session).engageStreak ?? 0), 'followup', `play-mode engage (streak ${trackingRuntimeOf(session).engageStreak ?? 0})`))
       } catch { /* agent may have been disposed */ }
     }, engageDelayMs(entry.engageStreak ?? 0))
     engageTimers.set(session.id, timer)
@@ -925,7 +1011,7 @@ function installRefreshReminder(ctx) {
       const decision = await next()
       if (decision.kind !== 'enter') return decision
       let entry
-      try { entry = runtimeOf(agent.session) } catch { return decision }
+      try { entry = trackingRuntimeOf(agent.session) } catch { return decision }
       const view = boardView(entry.state)
       if (view === null || view.present !== true) return decision // no board, or dismissed
       if (view.allDone === true) return decision // nothing to refresh
@@ -974,6 +1060,26 @@ function boardSignature(view) {
   return [view.overallPercent, ...view.rows.map((row) => `${row.id}:${row.percent}:${row.status}:${row.items?.length ?? 0}`)].join('|')
 }
 
+/**
+ * Per-session runtime: the folded journal STATE (not the view — folds chain),
+ * staleness counters, and turn caps. Module-scoped because commitTrackingEvent
+ * folds into it from every mutation site; first touch folds the FULL journal
+ * (constructor seeds never fire session/event, so incremental-only would miss
+ * pre-existing boards).
+ */
+const trackingRuntimes = new WeakMap()
+
+function trackingRuntimeOf(session) {
+  let entry = trackingRuntimes.get(session)
+  if (entry === undefined) {
+    let state = null
+    for (const event of trackingJournal(session)) state = foldTracking(state, event)
+    entry = { state, steps: 0, outputTokens: 0, remindedThisTurn: false, injectedThisTurn: false }
+    trackingRuntimes.set(session, entry)
+  }
+  return entry
+}
+
 /** Whether the trailing assembly messages already carry tracking context (dedupe). */
 function assemblyCarriesTracking(messages) {
   if (Array.isArray(messages) === false) return false
@@ -985,12 +1091,22 @@ function assemblyCarriesTracking(messages) {
 }
 
 export function apply(ctx) {
-  // Register before any history consumer can ask persistence to interpret a
-  // stored tracking event. The injection fiber owns the disposer, so plugin
-  // unload and HMR close the compatibility window with the projection code.
+  // Fork-only admission (see the session-event admission block above): when
+  // the harness still runs the sessionEventTypes registration service (the
+  // svgop fork behind the web profile), register our types and switch the
+  // session-log mirror on. Upstream (>= 0.2.0, the desktop app) has no such
+  // service: this deferred fiber simply never fires, and the journal + v2
+  // track record carry the plugin state instead.
   ctx.inject(['sessionEventTypes'], (eventTypesCtx) => {
     eventTypesCtx.effect(
-      () => eventTypesCtx.sessionEventTypes.register(TRACKING_EVENT_TYPES, name),
+      () => {
+        const dispose = eventTypesCtx.sessionEventTypes.register(TRACKING_EVENT_TYPES, name)
+        sessionEventsAdmitted.value = true
+        return () => {
+          sessionEventsAdmitted.value = false
+          dispose()
+        }
+      },
       'rich-tracking: session event types',
     )
   })
@@ -1026,7 +1142,7 @@ export function apply(ctx) {
       input: { hint: '[message]' },
       handler: ({ agent, rawInput }) => {
         let state = null
-        for (const event of ownEvents(agent.session)) state = foldTracking(state, event)
+        for (const event of trackingJournal(agent.session)) state = foldTracking(state, event)
         const view = boardView(state)
         const message = rawInput.trim()
         const text = `${message !== '' ? `${message}\n\n` : ''}<tracking-sync>\n${ledgerContext(view)}`
@@ -1085,7 +1201,7 @@ export function apply(ctx) {
 
         // Fold the current board for instruction templating.
         let state = null
-        for (const event of ownEvents(agent.session)) state = foldTracking(state, event)
+        for (const event of trackingJournal(agent.session)) state = foldTracking(state, event)
         const view = boardView(state)
 
         // Operator rule 2026-08-28: a board with open rows cannot be dismissed —
@@ -1105,7 +1221,7 @@ export function apply(ctx) {
         // failure. Record the decision so the fold and the client chip
         // reflect it; nothing to instruct the agent to omit.
         if (body.kind === 'dismiss-row' && view?.rows.find((entry) => entry.id === body.rowId) === undefined) {
-          agent.session.append('tracking/decision', { kind: 'dismiss-row', rowId: body.rowId ?? null, instruction: `row "${String(body.rowId)}" is already absent from this session's board — nothing to omit`, at: Date.now() })
+          commitTrackingEvent(agent.session, 'tracking/decision', { kind: 'dismiss-row', rowId: body.rowId ?? null, instruction: `row "${String(body.rowId)}" is already absent from this session's board — nothing to omit`, at: Date.now() })
           writeJson(res, 200, { ok: true, delivered: 'row-already-absent' })
           return
         }
@@ -1129,8 +1245,7 @@ export function apply(ctx) {
           return
         }
 
-        agent.session.append('tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, ...(noteText !== null ? { text: noteText } : {}), instruction, at: Date.now() })
-        writeTrackingRecord(agent.session)
+        commitTrackingEvent(agent.session, 'tracking/decision', { kind: body.kind, rowId: body.rowId ?? null, ...(noteText !== null ? { text: noteText } : {}), instruction, at: Date.now() })
 
         const whip = body.kind === 'pursue' || body.kind === 'delegate' || body.kind === 'scout' || body.kind === 'align' || body.kind === 'realign' || body.kind === 'note' || body.kind === 'checkpoint-request' || body.kind === 'play' || body.kind === 'pause'
         if (whip === true) {
