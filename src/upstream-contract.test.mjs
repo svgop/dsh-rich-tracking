@@ -83,3 +83,42 @@ test('upstream mode: mutations journal + record v2 and never touch session.appen
   assert.ok(record2.board.revision >= 2, 'revision continues across the restart')
   await rm(ws, { recursive: true, force: true })
 })
+
+test('desktop-carrier requests pass the route fence (Connection policy, not fetch metadata)', async () => {
+  const tools = []
+  const routes = []
+  const fake = fakeCtx(tools)
+  fake.webServer = { register: (route) => { routes.push(route); return () => {} } }
+  // Empty sessions root: the scan resolves immediately instead of walking the
+  // machine's real session store.
+  const home = await mkdtemp(join(tmpdir(), 'dsh-home-'))
+  const priorHome = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  try {
+    // The desktop app's page loads from a custom scheme: its fetches carry
+    // `sec-fetch-site: cross-site` and NO Origin header — the shape the old
+    // local fence rejected as "forbidden".
+    fake.connection = { requestRejection: () => undefined }
+    apply(fake)
+    const tracks = routes.find((route) => route.path === '/api/rich-tracking/tracks')
+    assert.ok(tracks, 'the tracks route registered')
+    const res = {
+      headers: null,
+      body: null,
+      writeHead(status, headers) { this.headers = { status, ...headers } },
+      end(body) { this.body = body },
+    }
+    await tracks.handler(
+      { method: 'GET', url: '/api/rich-tracking/tracks', headers: { 'sec-fetch-site': 'cross-site' }, socket: { remoteAddress: '127.0.0.1' } },
+      res,
+    )
+    // The handler answers asynchronously (the scan runs in a .then).
+    for (let i = 0; i < 100 && res.body === null; i++) await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.notEqual(res.headers?.status, 403, 'the legitimate desktop carrier must not be forbidden')
+    assert.ok(String(res.body).includes('"ok":true'), 'the route answered through Connection policy')
+  } finally {
+    if (priorHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = priorHome
+    await rm(home, { recursive: true, force: true })
+  }
+})

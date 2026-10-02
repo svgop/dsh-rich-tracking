@@ -177,7 +177,9 @@ function commitTrackingEvent(session, type, data) {
 
 // ── Tracks view: every board, every workspace ────────────────────────────────
 /** Sessions root (same layout the GUI uses: --slug--/<sessionId>/session.jsonl.zstd). */
-const SESSIONS_ROOT = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
+function sessionsRoot() {
+  return join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
+}
 /** Per-file scan cache: mtime+size keyed, so repeat opens only read changed logs. */
 const tracksCache = new Map()
 /** Scan budget per request: newest logs first; the rest catch up on later opens. */
@@ -355,9 +357,9 @@ async function storedBoardFor(sessionId) {
   // a file-existence probe for arbitrary paths.
   if (typeof sessionId !== 'string' || sessionId === '' || /[/\\]|\.\./.test(sessionId)) return null
   let slugDirs = []
-  try { slugDirs = readdirSync(SESSIONS_ROOT) } catch { return null }
+  try { slugDirs = readdirSync(sessionsRoot()) } catch { return null }
   for (const slug of slugDirs) {
-    const sessionDir = join(SESSIONS_ROOT, slug, sessionId)
+    const sessionDir = join(sessionsRoot(), slug, sessionId)
     const logName = sessionLogOf(sessionDir)
     if (logName === undefined) continue
     const folded = await foldSessionFile(join(sessionDir, logName))
@@ -441,7 +443,7 @@ async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
 }
 
 export const name = 'dsh-rich-tracking'
-export const inject = ['tools', 'webServer', 'agents', 'systemPrompt']
+export const inject = ['tools', 'webServer', 'agents', 'systemPrompt', 'connection']
 
 // These records shape the tracking projection and are required for faithful
 // history reads. The core persistence guard admits them only while this plugin
@@ -921,13 +923,41 @@ async function readJsonBody(req, limit) {
 }
 
 /** Route fence (exemplar posture): loopback socket + browser same-origin marker. */
-function guard(req, res) {
+/**
+ * Route fence: Connection's own Host/Origin + browser-authentication policy —
+ * the same checks the /api channel applies, and the only check that is correct
+ * under BOTH carriers. The desktop app loads its page from a custom scheme,
+ * so its fetches to 127.0.0.1 carry `sec-fetch-site: cross-site` and no
+ * Origin header — the old local fence rejected exactly the legitimate client
+ * ("failed: forbidden" in the desktop Tracks panel). The loopback+fetch-
+ * metadata fence survives only as the fallback when no Connection service is
+ * in scope. `guard` is (re)assigned in apply().
+ */
+let guard = localGuard
+
+function localGuard(req, res) {
   const remote = req.socket?.remoteAddress ?? ''
   const loopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
   const site = req.headers['sec-fetch-site']
   const browser = site === 'same-origin' || typeof req.headers.origin === 'string'
   if (!loopback || !browser) writeJson(res, 403, { ok: false, error: 'forbidden' })
   return loopback && browser
+}
+
+function makeGuard(ctx) {
+  return (req, res) => {
+    const connection = ctx?.connection
+    if (connection !== undefined && typeof connection.requestRejection === 'function') {
+      const rejection = connection.requestRejection(req)
+      if (rejection !== undefined) {
+        res.writeHead(rejection, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+        return false
+      }
+      return true
+    }
+    return localGuard(req, res)
+  }
 }
 
 /** The refresh loop (design §10): log-derived counters + one reminder per turn. */
@@ -1091,6 +1121,7 @@ function assemblyCarriesTracking(messages) {
 }
 
 export function apply(ctx) {
+  guard = makeGuard(ctx)
   // Fork-only admission (see the session-event admission block above): when
   // the harness still runs the sessionEventTypes registration service (the
   // svgop fork behind the web profile), register our types and switch the
