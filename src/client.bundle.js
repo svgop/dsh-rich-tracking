@@ -369,11 +369,11 @@ window.__ModuleLoader__.load({
 		function RowGlyph({ status }) {
 			if (status === "done") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphDone", children: (0, react_jsx_runtime.jsx)(CompletedGlyph, {}) });
 			if (status === "active") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphActive", children: (0, react_jsx_runtime.jsx)(ProgressGlyph, {}) });
-			if (status === "blocked") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphBlocked", children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconWarningOutline16, { size: 14 }) });
+			if (status === "blocked") return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphBlocked", children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconWarningOutlineRegular, { size: 14 }) });
 			return (0, react_jsx_runtime.jsx)("span", { className: "rt-glyph rt-glyphPending", children: (0, react_jsx_runtime.jsx)(PendingGlyph, {}) });
 		}
 		/** Delegate icon: the person/agent glyph when the runtime primitives carry it, queue glyph as fallback. */
-		const DelegateIcon = _deepseek_ai_dsh_client_ui_primitives.IconUserOutline16 ?? _deepseek_ai_dsh_client_ui_primitives.IconQueueOutline14;
+		const DelegateIcon = _deepseek_ai_dsh_client_ui_primitives.IconUserOutlineRegular ?? _deepseek_ai_dsh_client_ui_primitives.IconQueueOutlineRegular;
 		/** Tooltip-wrapped icon action (exemplar PreflightButton pattern: 500ms tooltip naming verb + consequence). */
 		function ActionButton({ label, hint, disabled, onClick, children }) {
 			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
@@ -483,28 +483,28 @@ window.__ModuleLoader__.load({
 								hint: t("action.note.hint"),
 								disabled: busy,
 								onClick: () => setNoting((value) => !value),
-								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconListPenOutline16, { size: 14 })
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconListPenOutlineRegular, { size: 14 })
 							}),
 							hasItems === true ? (0, react_jsx_runtime.jsx)(ActionButton, {
 								label: open === true ? t("row.collapse") : t("row.expand"),
 								hint: open === true ? t("row.collapse") : t("row.expand"),
 								disabled: false,
 								onClick: toggle,
-								children: open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {})
+								children: open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 }) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutlineRegular, { size: 14 })
 							}) : null,
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("row.record.open"),
 								hint: t("row.record.hint"),
 								disabled: busy,
 								onClick: () => onRecord(row),
-								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconQuestionOutline14, {})
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconQuestionOutlineRegular, { size: 14 })
 							}),
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("action.pursue"),
 								hint: t("action.pursue.hint"),
 								disabled: busy,
 								onClick: () => onAction("pursue", row.id),
-								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSendOutline14, {})
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSendOutlineRegular, { size: 14 })
 							}),
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("action.delegate"),
@@ -518,14 +518,14 @@ window.__ModuleLoader__.load({
 								hint: t("action.alignRow.hint"),
 								disabled: busy,
 								onClick: () => onAction("align", row.id),
-								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutlineRegular, {})
 							}),
 							(0, react_jsx_runtime.jsx)(ActionButton, {
 								label: t("action.dismiss"),
 								hint: t("action.dismissRow.hint"),
 								disabled: busy,
 								onClick: () => onAction("dismiss-row", row.id),
-								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline16, {})
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutlineRegular, {})
 							})
 						]
 					})
@@ -582,7 +582,7 @@ window.__ModuleLoader__.load({
 						"aria-label": `${t("completed.toggle")} — ${rows.length}`,
 						onClick: () => setOpen((value) => !value),
 						children: [
-							open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {}),
+							open === true ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 }) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutlineRegular, { size: 14 }),
 							(0, react_jsx_runtime.jsx)("span", { className: "rt-completedCount", children: `${rows.length} ${t("completed.toggle")}` }),
 							(0, react_jsx_runtime.jsx)("span", { children: t("completed.toggleHint") })
 						]
@@ -599,7 +599,7 @@ window.__ModuleLoader__.load({
 									hint: t("action.dismissRow.hint"),
 									disabled: busy,
 									onClick: () => onAction("dismiss-row", row.id),
-									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline16, { size: 14 })
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutlineRegular, { size: 14 })
 								})
 							]
 						}, row.id))
@@ -648,7 +648,7 @@ window.__ModuleLoader__.load({
 									"aria-label": t("row.record.close") ?? undefined,
 									autoFocus: true,
 									onClick: onClose,
-									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline16, {})
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutlineRegular, {})
 								})
 							]
 						}),
@@ -720,7 +720,7 @@ window.__ModuleLoader__.load({
 										(0, react_jsx_runtime.jsxs)("span", {
 											className: "rt-recordLabel",
 											children: [
-												(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconLinkOutline14, { size: 12 }),
+												(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconLinkOutlineRegular, { size: 12 }),
 												` ${t("record.refs")} · ${refs.length}`
 											]
 										}),
@@ -861,37 +861,37 @@ window.__ModuleLoader__.load({
 											hint: t("action.realign.hint"),
 											disabled: busy !== null,
 											onClick: () => act("realign"),
-											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutline16, { size: 14 })
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })
 										}),
 										(0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.align"),
 											hint: t("action.align.hint"),
 											disabled: busy !== null,
 											onClick: () => act("align"),
-											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutlineRegular, {})
 										}),
 										view.allDone === true ? null : (0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.scout"),
 											hint: t("action.scout.hint"),
 											disabled: busy !== null,
 											onClick: () => act("scout"),
-											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, {})
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutlineRegular, {})
 										}),
 										(0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.checkpoint"),
 											hint: t("action.checkpoint.hint"),
 											disabled: busy !== null,
 											onClick: () => act("checkpoint-request"),
-											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutline16, {})
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, {})
 										}),
 										view.allDone === true ? (0, react_jsx_runtime.jsx)(ActionButton, {
 											label: t("action.dismiss"),
 											hint: t("action.dismiss.hint"),
 											disabled: busy !== null,
 											onClick: () => act("dismiss"),
-											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {})
+											children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular, {})
 										}) : null,
-										(0, react_jsx_runtime.jsx)("span", { className: "rt-chevron", "aria-hidden": "true", children: expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, {}) })
+										(0, react_jsx_runtime.jsx)("span", { className: "rt-chevron", "aria-hidden": "true", children: expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular, { size: 14 }) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutlineRegular, { size: 14 }) })
 									]
 								})
 							]

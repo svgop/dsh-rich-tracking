@@ -1,0 +1,6 @@
+{
+	"meta": {
+		"title": "Rich Tracking",
+		"description": "Percent-progress scoreboard docked below the composer: live rows derived from artifact truth, per-row records, git-aware checkpoints, and operator actions."
+	}
+}
