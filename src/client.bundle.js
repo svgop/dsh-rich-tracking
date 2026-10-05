@@ -58,6 +58,7 @@ window.__ModuleLoader__.load({
 			"tracks.staleHost": "host process predates Tracks — restart the dsh web service",
 			"tracks.refresh": "Refresh",
 			"tracks.close": "Close",
+			"tracks.moreActions": "More board actions",
 			"tracks.boards": "board(s)",
 			"tracks.scanned": "scanned",
 			"tracks.empty": "No tracking boards yet — boards appear here once a session calls tracking_write.",
@@ -148,6 +149,7 @@ window.__ModuleLoader__.load({
 			"tracks.staleHost": "宿主进程早于 Tracks——请重启 dsh web 服务",
 			"tracks.refresh": "刷新",
 			"tracks.close": "关闭",
+			"tracks.moreActions": "更多看板操作",
 			"tracks.boards": "块板",
 			"tracks.scanned": "已扫描",
 			"tracks.empty": "还没有追踪板——会话调用 tracking_write 后会出现在这里。",
@@ -918,35 +920,31 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region lib/tracks.js
 /**
- * Tracks sidebar view v2 (2026-09-07): the dialog opened from the sanctioned
- * sidebar.footer.action slot (the v0.4 MutationObserver/logoRow graft is
- * gone). Status is ICONS in the dock's grammar (color + motion), not text
- * badges; every action works on offline boards by waking the session
- * (sessions.create create-or-adopt resumes the stored session on the host,
- * no navigation), and Open navigates via sessions.open. Dismiss closes any
- * track from here (the route relaxes the open-rows guard for source:dialog).
+ * Tracks page v3 (wave 2, 2026-10): the hosted page mounted through the
+ * `main` slot is a pure React tree built from @deepseek-ai/dsh-client-ui
+ * primitives — DisclosureRow boards with StateDot status marks and Tag
+ * percents, an ellipsis Menu for the overflow actions, Input note rows —
+ * replacing the v2 pure-DOM trk2 builder. Behavior is frozen: every action
+ * still works on offline boards by waking the session (sessions.create
+ * create-or-adopt resumes the stored session on the host, no navigation),
+ * Open navigates via sessions.open, and Dismiss closes any track from here
+ * (the route relaxes the open-rows guard for source:dialog). The rt-* dock
+ * is a separate surface and keeps its own grammar.
  */
 const TRACKS_ICON = '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.2" cy="3.2" r="1.7"/><circle cx="12.8" cy="12.8" r="1.7"/><path d="M4.4 4.4 L7.2 7.2"/><circle cx="8.6" cy="8.6" r="1.4"/><path d="M9.7 9.7 L11.7 11.7"/></svg>';
-const ST_SVGS = {
-	done: '<svg viewBox="0 0 14 14" width="15" height="15" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6.4" stroke="currentColor" stroke-width="1.2"/><path d="M10.9631 5.71411L7.70154 8.97571C7.48011 9.19714 7.27736 9.40099 7.09229 9.54993C6.89742 9.70669 6.66314 9.85279 6.3634 9.90027C6.2049 9.92534 6.04339 9.92534 5.88489 9.90027C5.58515 9.85279 5.35087 9.70669 5.15601 9.54993C4.97093 9.40099 4.76818 9.19714 4.54675 8.97571L3.03516 7.46411L3.96313 6.53613L5.47473 8.04773C5.7169 8.28989 5.86196 8.43389 5.97888 8.52795C6.08597 8.61409 6.10875 8.60701 6.08997 8.604C6.11259 8.60758 6.13571 8.60758 6.15833 8.604C6.13954 8.60701 6.16232 8.61409 6.26941 8.52795C6.38633 8.43389 6.53139 8.28989 6.77356 8.04773L10.0352 4.78613L10.9631 5.71411Z" fill="currentColor"/></svg>',
-	live: '<svg viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><circle cx="7" cy="7" r="4" fill="currentColor"/></svg>',
-	playing: '<svg viewBox="0 0 12 12" width="13" height="13" aria-hidden="true"><rect x="1" y="1" width="3.5" height="10" rx="0.5" fill="currentColor"/><rect x="7.5" y="1" width="3.5" height="10" rx="0.5" fill="currentColor"/></svg>',
-	running: '<svg viewBox="0 0 14 14" width="15" height="15" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6.4" stroke="currentColor" stroke-width="1.4" stroke-dasharray="14 40" stroke-linecap="round"/></svg>',
-	offline: '<svg viewBox="0 0 14 14" width="15" height="15" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6.4" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.4 2.4"/></svg>',
-};
-const WARN_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true"><path d="M8 1.5L15 14.5H1L8 1.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12.6" r="0.7" fill="currentColor"/></svg>';
-const OPEN_SVG = '<svg viewBox="0 0 14 14" width="13" height="13" fill="none" aria-hidden="true"><path d="M4 10L10 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M5 4h5v5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const PLAY_SVG = '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 1.5v9l8-4.5z" fill="currentColor"/></svg>';
-const PAUSE_SVG = ST_SVGS.playing;
-const CLOSE_SVG = '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
-const NOTE_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2.5h10v7.5H8.5L5.5 13v-3H3z"/><path d="M5.5 5h5M5.5 7h3.5"/></svg>';
-const SEND_SVG = '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" aria-hidden="true"><path d="M1.5 7L12.5 2.5 9 12.5 6.8 8.2 1.5 7Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6.8 8.2L12.5 2.5" stroke="currentColor" stroke-width="1.2"/></svg>';
-const ROW_SVGS = {
-	done: ST_SVGS.done,
-	active: ST_SVGS.running,
-	blocked: WARN_SVG,
-	pending: ST_SVGS.offline,
-};
+/** boardState -> native StateDot state (wave 2: status marks are StateDot, not trk2 SVGs). */
+function boardDotState(state) {
+	if (state === "running" || state === "playing") return "ongoing";
+	if (state === "done") return "done";
+	return "idle";
+}
+/** row.status -> native StateDot state. */
+function rowDotState(status) {
+	if (status === "active") return "ongoing";
+	if (status === "blocked") return "warning";
+	if (status === "done") return "done";
+	return "idle";
+}
 /** One board's derived state: done beats everything, then offline, then the live ladder. */
 function boardState(board) {
 	if (board.allDone === true) return "done";
@@ -956,83 +954,54 @@ function boardState(board) {
 	return "idle";
 }
 const STATE_ORDER = { running: 0, playing: 1, idle: 2, offline: 3, done: 4 };
-const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:36px;padding:0 10px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:8px;cursor:pointer;text-align:left}
-.trk2-entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.trk2-entryIcon{display:inline-flex;justify-content:center;align-items:center;width:24px;height:24px;flex:none;color:var(--dsw-alias-label-tertiary)}
-.trk2-entryLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-scrim{position:fixed;inset:0;z-index:90;background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);display:flex;align-items:center;justify-content:center;padding:24px}
-.trk2-card{width:100%;max-width:880px;max-height:min(92vh,1200px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);border-radius:var(--dsw-radius-panel);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--dsw-elevation-prominent)}
-.trk2-card,.trk2-card *{box-sizing:border-box}
-.trk2-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.trk2-title{font-size:14px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);flex:none}
-.trk2-hint{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-iconBtn{flex:none;width:28px;height:28px;display:grid;place-items:center;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:999px;font-size:15px}
-.trk2-iconBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.trk2-body{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none}
-.trk2-body::-webkit-scrollbar{display:none}
-.trk2-wsHead{display:flex;align-items:baseline;gap:8px;padding:10px 16px 4px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;text-transform:uppercase;letter-spacing:.05em}
-.trk2-wsPath{font-family:ui-monospace,monospace;text-transform:none;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-board{border-top:1px solid var(--dsw-alias-border-l1)}
-.trk2-boardHead{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px 9px 16px;background:0 0;border:none;cursor:pointer;font:inherit;text-align:left;color:inherit}
-.trk2-boardHead:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.trk2-st{flex:none;display:grid;place-items:center;width:18px;height:18px}
-.trk2-stDone,.trk2-stLive,.trk2-stPlaying{color:var(--dsw-alias-state-success-primary)}
-.trk2-stPlaying svg{animation:trk2-pulse 2s ease-in-out infinite}
-.trk2-stRunning{color:var(--dsw-alias-state-business-primary)}
-.trk2-stRunning svg{animation:trk2-spin 1s linear infinite}
-.trk2-stOffline{color:var(--dsw-alias-label-caption)}
-.trk2-blockedBadge{flex:none;display:grid;place-items:center;width:16px;height:18px;color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-state-error-primary))}
-@keyframes trk2-pulse{0%,100%{opacity:1}50%{opacity:.5}}
-@keyframes trk2-spin{to{transform:rotate(360deg)}}
-.trk2-pct{flex:none;font-size:12px;font-weight:600;color:var(--dsw-alias-state-business-primary);min-width:34px;text-align:right}
-.trk2-boardAll .trk2-pct{color:var(--dsw-alias-state-success-primary)}
-.trk2-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.trk2-title2{color:var(--dsw-alias-label-primary);font-size:13px;line-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-meta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-mini{flex:none;width:26px;height:26px;display:grid;place-items:center;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:6px;cursor:pointer;opacity:.75}
-.trk2-mini:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);opacity:1}
-.trk2-miniPlayOn{color:var(--dsw-alias-state-success-primary);opacity:1}
-.trk2-miniConfirm{color:var(--dsw-alias-state-error-primary);opacity:1}
-.trk2-chevron{flex:none;color:var(--dsw-alias-label-tertiary);transition:transform .12s ease;display:inline-block}
-.trk2-boardOpen .trk2-chevron{transform:rotate(90deg)}
-.trk2-rows{display:none;border-top:1px solid var(--dsw-alias-border-l1)}
-.trk2-boardOpen .trk2-rows{display:block}
-.trk2-row{display:flex;align-items:center;gap:8px;padding:6px 16px 6px 26px;border-bottom:1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent)}
-.trk2-rowSt{flex:none;display:grid;place-items:center;width:14px;height:14px;color:var(--dsw-alias-label-caption)}
-.trk2-rowStActive{color:var(--dsw-alias-state-business-primary)}
-.trk2-rowStActive svg{animation:trk2-spin 1s linear infinite}
-.trk2-rowStBlocked{color:var(--dsw-alias-state-warn-primary,var(--dsw-alias-state-error-primary))}
-.trk2-rowLabel{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-rowDone .trk2-rowLabel,.trk2-rowDone .trk2-rowPct{opacity:.5}
-.trk2-status{color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;flex:none}
-.trk2-rowPct{flex:none;font-size:11.5px;color:var(--dsw-alias-label-secondary);min-width:30px;text-align:right}
-.trk2-rowAct{flex:none;width:24px;height:24px;display:grid;place-items:center;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:6px;cursor:pointer;visibility:hidden}
-.trk2-row:hover .trk2-rowAct,.trk2-row:focus-within .trk2-rowAct{visibility:visible}
-.trk2-rowAct:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-business-primary)}
-.trk2-noteRow{display:flex;gap:6px;padding:2px 16px 6px 26px}
-.trk2-noteRow input{flex:1;min-width:0;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:17px;padding:3px 8px;border-radius:6px;outline:none}
-.trk2-noteRow input:focus{border-color:var(--dsw-alias-state-business-primary)}
-.trk2-noteRow button{flex:none;border:1px solid var(--dsw-alias-border-l2);background:0 0;border-radius:6px;padding:2px 10px;font:inherit;font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary);cursor:pointer}
-.trk2-noteRow button:hover{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
-.trk2-actions{display:flex;flex-wrap:wrap;gap:4px;padding:7px 16px;border-top:1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent)}
-.trk2-act{appearance:none;background:0 0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:2px 9px;font:inherit;font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary);cursor:pointer}
-.trk2-act:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
-.trk2-act:disabled{opacity:.4;cursor:default}
-.trk2-foot2{display:flex;align-items:center;border-top:1px solid var(--dsw-alias-border-l1);padding:6px 12px}
-.trk2-footStatus{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-empty{padding:24px 16px;color:var(--dsw-alias-label-tertiary);font-size:13px;text-align:center}
-/* Hosted main-panel mode (sidebar.panellist + main slots): native page
-   template (Plugins/Tasks family) — transparent page over the main column's
-   bg-base, 960px centered column, pageHead anatomy, no dialog-card chrome. */
-.trk2-main{height:100%;overflow:auto;box-sizing:border-box;padding:0 clamp(24px,4vw,48px) 48px;display:flex;justify-content:center;align-items:flex-start}
-.trk2-main .trk2-scrim{position:static;z-index:auto;background:0 0;backdrop-filter:none;padding:0;display:flex;flex-direction:column;width:100%;max-width:960px;height:100%}
-.trk2-main .trk2-card{flex:1;min-height:0;max-height:none;max-width:none;border:none;background:0 0;border-radius:0;box-shadow:none;gap:32px}
-.trk2-main .trk2-head{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px;align-items:start;padding:28px 0 0;border-bottom:none}
-[data-platform=darwin] .trk2-main .trk2-head{padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
-.trk2-main .trk2-title{grid-area:1 / 1 / 2 / 2;margin:0;font-size:20px;font-weight:500;line-height:28px;color:var(--dsw-alias-label-primary)}
-.trk2-main .trk2-hint{grid-area:2 / 1 / 3 / 2;margin:4px 0 0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
-.trk2-main .trk2-iconBtn{grid-area:1 / 2 / 2 / 3;justify-self:end}
-.trk2-main .trk2-closeBtn{display:none}`;
+const TRACKS_CSS = `/* Tracks page (hosted main panel): the native page template — 960px column,
+   pageHead anatomy, 32px group rhythm, group-head grammar. Layout glue only:
+   every control is a @deepseek-ai/dsh-client-ui-primitives component (Button,
+   Tag, StateDot, DisclosureRow, Menu, MenuItemButton, Input, Tooltip,
+   PathLabel); no control skins remain. */
+.trk2-page{box-sizing:border-box;height:100%;color:var(--dsw-alias-label-primary);display:flex;flex-direction:column;align-items:center;gap:32px;padding:0 clamp(24px,4vw,48px) 48px;overflow:auto}
+.trk2-page>*{width:100%;max-width:960px}
+.trk2-pageHead{box-sizing:border-box;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-top:28px}
+[data-platform=darwin] .trk2-pageHead{padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
+.trk2-pageTitle{margin:0;font-size:20px;font-weight:500;line-height:28px}
+.trk2-pageIntro{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:13px;line-height:20px}
+.trk2-toolbar{display:flex;justify-content:flex-end;align-items:center;gap:16px}
+.trk2-empty{color:var(--dsw-alias-label-tertiary);margin:0;padding:24px 0;font-size:13px;line-height:20px;text-align:center}
+.trk2-group{display:flex;flex-direction:column;gap:8px}
+.trk2-groupHead{display:flex;align-items:baseline;gap:8px;min-width:0}
+.trk2-groupTitle{margin:0;font-size:14px;font-weight:500;line-height:22px;color:var(--dsw-alias-label-primary)}
+.trk2-groupCount{color:var(--dsw-alias-label-caption);font-variant-numeric:tabular-nums;font-size:14px}
+.trk2-groupPath{flex:1 1 auto;min-width:0;align-self:center;font-family:var(--dsw-font-mono,ui-monospace,monospace)}
+.trk2-boards{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none}
+/* board = DisclosureRow; geometry glue so the 28px icon controls fit the native row */
+.trk2-board{border-radius:var(--dsw-radius-xl)}
+div.trk2-boardRow{height:auto;min-height:34px;padding:3px 8px;margin:0 -8px;border-radius:var(--dsw-radius-md)}
+div.trk2-boardRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.trk2-boardContent{flex:1 1 auto;min-width:0}
+.trk2-boardName{color:var(--dsw-alias-label-primary);font-weight:500}
+.trk2-boardEnd{flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.trk2-boardMeta{flex:0 1 auto;min-width:48px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.trk2-boardActs{flex:none;display:flex;align-items:center;gap:2px}
+/* rows: plain layout rows under a board */
+.trk2-rows{display:flex;flex-direction:column;gap:1px;padding:2px 0 6px 22px}
+.trk2-row{display:flex;align-items:center;gap:8px;min-width:0;min-height:28px;padding:2px 6px;border-radius:var(--dsw-radius-sm)}
+.trk2-row:hover,.trk2-row:focus-within{background:var(--dsw-alias-interactive-bg-hover)}
+.trk2-rowDone{opacity:.55}
+.trk2-dot{display:inline-flex;flex:none;align-items:center}
+.trk2-tagWrap{display:inline-flex;flex:none}
+.trk2-rowLabel{flex:1 1 auto;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trk2-rowItems{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+.trk2-rowPct{flex:none;min-width:34px;text-align:right;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
+.trk2-rowActs{flex:none;display:flex;align-items:center;gap:2px;visibility:hidden}
+.trk2-row:hover .trk2-rowActs,.trk2-row:focus-within .trk2-rowActs{visibility:visible}
+.trk2-note{display:flex;align-items:center;gap:6px;padding:2px 6px 6px 22px}
+.trk2-noteInput{flex:1 1 auto;min-width:0}
+/* the 28px square icon-button grammar of native cards, laid over Button ghost sm */
+button.trk2-ibtn{flex:none;width:28px;padding:0;color:var(--dsw-alias-label-caption)}
+button.trk2-ibtn:hover:not(:disabled){color:var(--dsw-alias-label-secondary)}
+button.trk2-ibtn.trk2-ibtnOn{color:var(--dsw-alias-state-success-primary)}
+.trk2-status{margin:0;min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trk2-statusError{color:var(--dsw-alias-state-error-primary)}`;
 
 		const tt = (key) => (/^zh/i.test(navigator.language ?? "") ? zh : en)[key] ?? en[key] ?? key;
 
@@ -1066,60 +1035,301 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 			if (listed !== true) throw new Error("cannot wake: session directory unknown");
 		}
 
-		function createTracksPanel(sessionsApi, onCloseParam) {
-			let onClose = onCloseParam;
-			const scrim = document.createElement("div");
-			scrim.className = "trk2-scrim";
-			scrim.addEventListener("click", (event) => { if (event.target === scrim) onClose(); });
-			const card = document.createElement("div");
-			card.className = "trk2-card";
-			card.setAttribute("aria-label", tt("tracks.title"));
-			const head = document.createElement("div");
-			head.className = "trk2-head";
-			const title = document.createElement("span");
-			title.className = "trk2-title";
-			title.textContent = tt("tracks.title");
-			const hint = document.createElement("span");
-			hint.className = "trk2-hint";
-			hint.textContent = tt("tracks.scanning");
-			const refreshBtn = document.createElement("button");
-			refreshBtn.type = "button";
-			refreshBtn.className = "trk2-iconBtn";
-			refreshBtn.textContent = "\u27f3";
-			refreshBtn.title = tt("tracks.refresh");
-			refreshBtn.addEventListener("click", () => load());
-			const closeBtn = document.createElement("button");
-			closeBtn.type = "button";
-			closeBtn.className = "trk2-iconBtn trk2-closeBtn";
-			closeBtn.textContent = "\u00d7";
-			closeBtn.title = tt("tracks.close");
-			closeBtn.addEventListener("click", () => onClose());
-			head.append(title, hint, refreshBtn, closeBtn);
-			const body = document.createElement("div");
-			body.className = "trk2-body";
-			const foot = document.createElement("div");
-			foot.className = "trk2-foot2";
-			const footStatus = document.createElement("span");
-			footStatus.className = "trk2-footStatus";
-			foot.append(footStatus);
-			card.append(head, body, foot);
-			scrim.append(card);
-
-			const setStatus = (text, isError) => { footStatus.textContent = text ?? ""; footStatus.style.color = isError === true ? "var(--dsw-alias-state-error-primary)" : ""; };
-
-			let busy = false;
+		/** Tooltip-wrapped span anchor: StateDot is a plain function component (it takes
+		 * no ref), so the tooltip measures a real span that carries the dot. */
+		function StateDotTip({ state, label }) {
+			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+				label,
+				side: "top",
+				delayMs: 500,
+				portal: true,
+				children: (0, react_jsx_runtime.jsx)("span", {
+					className: "trk2-dot",
+					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state })
+				})
+			});
+		}
+		/** The native card icon-button grammar — a 28px square Button ghost sm — with a
+		 * 500ms tooltip naming the verb (the ActionButton exemplar delay). */
+		function IconButton({ label, hint, icon, disabled, active, ariaExpanded, ariaHaspopup, onClick }) {
+			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+				label: hint ?? label,
+				side: "top",
+				delayMs: 500,
+				portal: true,
+				children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+					variant: "ghost",
+					size: "sm",
+					className: cx("trk2-ibtn", active === true && "trk2-ibtnOn"),
+					"aria-label": label,
+					"aria-expanded": ariaExpanded,
+					"aria-haspopup": ariaHaspopup,
+					disabled,
+					onClick: (event) => { event.stopPropagation(); onClick(); },
+					children: icon
+				})
+			});
+		}
+		/** One board's rows: plain layout rows — StateDot status (tooltip = status),
+		 * label, acceptance-item count, percent, hover-revealed Pursue + Note; the note
+		 * row is Input + Button sm. Enter sends, Escape closes (the v0 grammar). */
+		function BoardRows({ board, busy, act }) {
+			const [notingId, setNotingId] = (0, react.useState)(null);
+			const [noteText, setNoteText] = (0, react.useState)("");
+			const openNote = (row) => { setNoteText(""); setNotingId(row.id); };
+			const closeNote = () => { setNotingId(null); setNoteText(""); };
+			const submitNote = (row) => {
+				const text = noteText.trim();
+				closeNote();
+				if (text !== "") void act(board, "note", row.id, text);
+			};
+			return (0, react_jsx_runtime.jsx)("div", {
+				className: "trk2-rows",
+				children: board.rows.map((row) => (0, react_jsx_runtime.jsxs)(react.Fragment, {
+					key: row.id,
+					children: [
+						(0, react_jsx_runtime.jsxs)("div", {
+							className: cx("trk2-row", row.percent === 100 && "trk2-rowDone"),
+							"data-status": row.status,
+							children: [
+								(0, react_jsx_runtime.jsx)(StateDotTip, { state: rowDotState(row.status), label: row.status }),
+								(0, react_jsx_runtime.jsx)("span", { className: "trk2-rowLabel", title: row.label, children: row.label }),
+								row.items !== null && row.items !== undefined
+									? (0, react_jsx_runtime.jsx)("span", { className: "trk2-rowItems", children: `${row.items.done}/${row.items.total}` })
+									: null,
+								(0, react_jsx_runtime.jsx)("span", { className: "trk2-rowPct", children: `${row.percent}%` }),
+								(0, react_jsx_runtime.jsxs)("span", {
+									className: "trk2-rowActs",
+									children: [
+										row.percent < 100
+											? (0, react_jsx_runtime.jsx)(IconButton, {
+												label: tt("action.pursue"),
+												hint: `${tt("action.pursue")} \u2014 ${row.label}`,
+												icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSendOutlineRegular, { "aria-hidden": "true" }),
+												disabled: busy,
+												onClick: () => { void act(board, "pursue", row.id); }
+											})
+											: null,
+										(0, react_jsx_runtime.jsx)(IconButton, {
+											label: tt("action.note"),
+											hint: tt("action.note.hint"),
+											icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconListPenOutlineRegular, { "aria-hidden": "true" }),
+											disabled: busy,
+											active: notingId === row.id,
+											onClick: () => { if (notingId === row.id) closeNote(); else openNote(row); }
+										})
+									]
+								})
+							]
+						}),
+						notingId === row.id
+							? (0, react_jsx_runtime.jsxs)("div", {
+								className: "trk2-note",
+								children: [
+									(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Input, {
+										className: "trk2-noteInput",
+										value: noteText,
+										placeholder: tt("note.placeholder"),
+										maxLength: 500,
+										spellCheck: false,
+										autoFocus: true,
+										onChange: (event) => setNoteText(event.target.value),
+										onKeyDown: (event) => {
+											event.stopPropagation();
+											if (event.key === "Enter") { event.preventDefault(); submitNote(row); }
+											if (event.key === "Escape") { event.preventDefault(); closeNote(); }
+										}
+									}),
+									(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+										variant: "ghost",
+										size: "sm",
+										onClick: () => submitNote(row),
+										children: tt("note.send")
+									})
+								]
+							})
+							: null
+					]
+				}))
+			});
+		}
+		/** One board: a native DisclosureRow — StateDot by boardState, title = board
+		 * name, meta + blocked Tag + percent Tag + Open/Play-Pause in the row end, and
+		 * the remaining actions (Checkpoint, Align, Realign, Scout, Dismiss) in the
+		 * ellipsis Menu. Dismiss keeps its two-step confirm (armed label, 2600ms reset). */
+		function BoardCard({ board, open, onToggle, busy, act, openSession }) {
+			const state = boardState(board);
+			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
+			const [confirming, setConfirming] = (0, react.useState)(false);
+			const confirmTimer = (0, react.useRef)(null);
+			(0, react.useEffect)(() => () => { if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current); }, []);
+			const openRows = board.rows.filter((row) => row.percent < 100).length;
+			const blocked = board.rows.filter((row) => row.status === "blocked").length;
+			const doneCount = board.rows.filter((row) => row.percent === 100).length;
+			const age = board.lastWriteAt !== null && board.lastWriteAt !== undefined ? `${relativeMinutes(board.lastWriteAt, Date.now())} ${tt("ago")}` : "\u2014";
+			const fire = (kind) => { setMenuOpen(false); void act(board, kind); };
+			const onDismissSelect = () => {
+				if (openRows > 0 && confirming !== true) {
+					setConfirming(true);
+					if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+					confirmTimer.current = window.setTimeout(() => { confirmTimer.current = null; setConfirming(false); }, 2600);
+					return;
+				}
+				if (confirmTimer.current !== null) { window.clearTimeout(confirmTimer.current); confirmTimer.current = null; }
+				setConfirming(false);
+				fire("dismiss");
+			};
+			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.DisclosureRow, {
+				className: "trk2-board",
+				rowClassName: "trk2-boardRow",
+				contentClassName: "trk2-boardContent",
+				titleClassName: "trk2-boardName",
+				icon: (0, react_jsx_runtime.jsx)(StateDotTip, { state: boardDotState(state), label: tt(`tracks.state.${state}`) }),
+				title: board.title ?? board.sessionId,
+				open: open,
+				expandable: true,
+				expandOnRowClick: true,
+				onToggle: onToggle,
+				keepContentWhenOpen: true,
+				collapsedContent: (0, react_jsx_runtime.jsxs)("span", {
+					className: "trk2-boardEnd",
+					children: [
+						(0, react_jsx_runtime.jsx)("span", { className: "trk2-boardMeta", children: `r${board.revision} \u00b7 ${doneCount}/${board.rows.length} ${tt("rows")} \u00b7 ${age}` }),
+						blocked > 0
+							? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+								label: `${blocked} ${tt("tracks.blocked")}`,
+								side: "top",
+								delayMs: 500,
+								portal: true,
+								children: (0, react_jsx_runtime.jsx)("span", {
+									className: "trk2-tagWrap",
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tag, { tone: "warning", children: blocked })
+								})
+							})
+							: null,
+						(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tag, { tone: board.allDone === true ? "success" : "info", children: `${board.overallPercent}%` }),
+						(0, react_jsx_runtime.jsxs)("span", {
+							className: "trk2-boardActs",
+							children: [
+								(0, react_jsx_runtime.jsx)(IconButton, {
+									label: tt("tracks.open"),
+									icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpenOutlineRegular, { "aria-hidden": "true" }),
+									disabled: busy,
+									onClick: () => { void openSession(board); }
+								}),
+								(0, react_jsx_runtime.jsx)(IconButton, {
+									label: board.playMode === true ? tt("action.pause") : tt("action.play"),
+									icon: board.playMode === true
+										? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPauseOutlineRegular, { "aria-hidden": "true" })
+										: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlayOutlineRegular, { "aria-hidden": "true" }),
+									disabled: busy,
+									active: board.playMode === true,
+									onClick: () => { void act(board, board.playMode === true ? "pause" : "play"); }
+								}),
+								(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Menu, {
+									open: menuOpen,
+									onClose: () => setMenuOpen(false),
+									portal: true,
+									align: "end",
+									anchor: (0, react_jsx_runtime.jsx)(IconButton, {
+										label: tt("tracks.moreActions"),
+										icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEllipsisOutlineRegular, { "aria-hidden": "true" }),
+										disabled: busy,
+										ariaExpanded: menuOpen,
+										ariaHaspopup: "menu",
+										onClick: () => { setMenuOpen((value) => !value); }
+									}),
+									children: [
+										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+											icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCheckOutlineRegular, {}),
+											disabled: busy,
+											onSelect: () => fire("checkpoint-request"),
+											children: tt("action.checkpoint")
+										}),
+										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+											icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutlineRegular, {}),
+											disabled: busy,
+											onSelect: () => fire("align"),
+											children: tt("action.align")
+										}),
+										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+											icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutlineRegular, {}),
+											disabled: busy,
+											onSelect: () => fire("realign"),
+											children: tt("action.realign")
+										}),
+										board.allDone !== true
+											? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+												icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutlineRegular, {}),
+												disabled: busy,
+												onSelect: () => fire("scout"),
+												children: tt("action.scout")
+											})
+											: null,
+										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MenuItemButton, {
+											separatorBefore: true,
+											danger: true,
+											icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular, {}),
+											disabled: busy,
+											onSelect: onDismissSelect,
+											children: confirming === true ? `${openRows} ${tt("tracks.confirmDismiss")}` : tt("action.dismiss")
+										})
+									]
+								})
+							]
+						})
+					]
+				}),
+				children: (0, react_jsx_runtime.jsx)(BoardRows, { board: board, busy: busy, act: act })
+			});
+		}
+		/** The hosted Tracks page (wave 2): a React tree of primitives — native pageHead
+		 * (title + scan intro + refresh), workspace group heads (groupTitle + count +
+		 * mono PathLabel), DisclosureRow boards, and the footer status line. The v0.x
+		 * action state machine is frozen verbatim: offline wake via sessions.create
+		 * (create-or-adopt), the 409 retry window, optimistic play/pause, local dismiss,
+		 * the 1200ms refresh beat, and the 12s poller that pauses while busy. */
+		function TracksPage({ sessions }) {
+			const [boards, setBoards] = (0, react.useState)([]);
+			const [scan, setScan] = (0, react.useState)(null);
+			const [scanning, setScanning] = (0, react.useState)(true);
+			const [loadError, setLoadError] = (0, react.useState)(null);
+			const [status, setStatus] = (0, react.useState)(null);
+			const [busy, setBusy] = (0, react.useState)(false);
+			const [expanded, setExpanded] = (0, react.useState)(() => new Set());
+			const busyRef = (0, react.useRef)(false);
+			const loadRef = (0, react.useRef)(() => {});
+			const load = () => {
+				setScanning(true);
+				fetchTracks().then((data) => {
+					setBoards(data.boards);
+					setScan({ scanned: data.scanned, total: data.total });
+					setLoadError(null);
+					setScanning(false);
+				}).catch((cause) => {
+					setScanning(false);
+					setLoadError(cause instanceof Error ? cause.message : String(cause));
+				});
+			};
+			loadRef.current = load;
+			(0, react.useEffect)(() => { loadRef.current(); }, []);
+			(0, react.useEffect)(() => {
+				const timer = window.setInterval(() => { if (busyRef.current === false) loadRef.current(); }, 12_000);
+				return () => window.clearInterval(timer);
+			}, []);
 			const act = async (board, kind, rowId, text) => {
-				if (busy === true) return;
-				busy = true;
-				card.querySelectorAll(".trk2-act,.trk2-mini,.trk2-rowAct").forEach((btn) => { btn.disabled = true; });
+				if (busyRef.current === true) return;
+				busyRef.current = true;
+				setBusy(true);
 				try {
 					if (board.live !== true) {
-						setStatus(tt("tracks.waking"));
-						try { await wakeBoard(sessionsApi, board) } catch (cause) {
-							setStatus(`${tt("error.generic")}: ${cause instanceof Error ? cause.message : String(cause)}`, true);
+						setStatus({ text: tt("tracks.waking") });
+						try { await wakeBoard(sessions, board) } catch (cause) {
+							setStatus({ text: `${tt("error.generic")}: ${cause instanceof Error ? cause.message : String(cause)}`, error: true });
 							return;
 						}
 						board.live = true;
+						setBoards((prev) => prev.map((entry) => entry.sessionId === board.sessionId ? { ...entry, live: true } : entry));
 					}
 					// The host agent materializes asynchronously after adopt;
 					// retry the 409 window instead of failing the first beat.
@@ -1134,248 +1344,135 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 							await new Promise((resolve) => setTimeout(resolve, 800));
 						}
 					}
-					if (kind === "play") board.playMode = true;
-					if (kind === "pause") board.playMode = false;
-					if (kind === "dismiss") {
-						lastData.boards = lastData.boards.filter((entry) => entry.sessionId !== board.sessionId);
-						expandedBoards.delete(board.sessionId);
-						render(lastData);
-					} else {
-						render(lastData);
-						window.setTimeout(() => load(), 1200);
+					if (kind === "play" || kind === "pause") {
+						board.playMode = kind === "play";
+						setBoards((prev) => prev.map((entry) => entry.sessionId === board.sessionId ? { ...entry, playMode: kind === "play" } : entry));
 					}
-					setStatus(`${board.title ?? board.sessionId.slice(0, 13)} \u2014 ${tt("status.delivered")}: ${tt(`status.${result.delivered}`)}`);
+					if (kind === "dismiss") {
+						setBoards((prev) => prev.filter((entry) => entry.sessionId !== board.sessionId));
+						setExpanded((prev) => {
+							const next = new Set(prev);
+							next.delete(board.sessionId);
+							return next;
+						});
+					} else {
+						window.setTimeout(() => loadRef.current(), 1200);
+					}
+					setStatus({ text: `${board.title ?? board.sessionId.slice(0, 13)} \u2014 ${tt("status.delivered")}: ${tt(`status.${result.delivered}`)}` });
 				} catch (cause) {
-					setStatus(cause.message === "session-offline" ? tt("error.offline") : `${tt("error.generic")}: ${cause.message}`, true);
-					window.setTimeout(() => load(), 1200);
+					const message = cause instanceof Error ? cause.message : String(cause);
+					setStatus({ text: message === "session-offline" ? tt("error.offline") : `${tt("error.generic")}: ${message}`, error: true });
+					window.setTimeout(() => loadRef.current(), 1200);
 				} finally {
-					busy = false;
-					card.querySelectorAll(".trk2-act,.trk2-mini,.trk2-rowAct").forEach((btn) => { btn.disabled = false; });
+					busyRef.current = false;
+					setBusy(false);
 				}
 			};
-
 			const openSession = async (board) => {
 				try {
-					if (board.live !== true) { setStatus(tt("tracks.waking")); await wakeBoard(sessionsApi, board); }
+					if (board.live !== true) { setStatus({ text: tt("tracks.waking") }); await wakeBoard(sessions, board); }
 				} catch { /* unlisted+uncwd: open() may still hold for listed sessions */ }
-				try { sessionsApi.open(board.sessionId) } catch (cause) {
-					setStatus(`${tt("error.generic")}: ${cause instanceof Error ? cause.message : String(cause)}`, true);
-					return;
+				try { sessions.open(board.sessionId) } catch (cause) {
+					setStatus({ text: `${tt("error.generic")}: ${cause instanceof Error ? cause.message : String(cause)}`, error: true });
 				}
-				onClose();
 			};
-
-			let lastData = { boards: [], scanned: 0, total: 0 };
-			const expandedBoards = new Set();
-			const render = (data) => {
-				const scroll = body.scrollTop;
-				lastData = data;
-				body.innerHTML = "";
-				hint.textContent = `${data.boards.length} ${tt("tracks.boards")} \u00b7 ${tt("tracks.scanned")} ${data.scanned}/${data.total}`;
-				if (data.boards.length === 0) {
-					const empty = document.createElement("div");
-					empty.className = "trk2-empty";
-					empty.textContent = tt("tracks.empty");
-					body.append(empty);
-					return;
-				}
+			const toggleBoard = (sessionId) => setExpanded((prev) => {
+				const next = new Set(prev);
+				if (next.has(sessionId) === true) next.delete(sessionId); else next.add(sessionId);
+				return next;
+			});
+			const intro = loadError !== null
+				? `${tt("tracks.loadFailed")}: ${loadError}`
+				: scanning === true
+					? tt("tracks.scanning")
+					: `${boards.length} ${tt("tracks.boards")} \u00b7 ${tt("tracks.scanned")} ${scan !== null ? scan.scanned : 0}/${scan !== null ? scan.total : 0}`;
+			const groups = [];
+			{
 				const byWorkspace = new Map();
-				for (const board of data.boards) {
+				for (const board of boards) {
 					const key = board.slug ?? "\u2014";
 					if (byWorkspace.has(key) === false) byWorkspace.set(key, []);
 					byWorkspace.get(key).push(board);
 				}
-				for (const [slug, boards] of byWorkspace) {
-					boards.sort((a, b) => (STATE_ORDER[boardState(a)] ?? 9) - (STATE_ORDER[boardState(b)] ?? 9) || (b.lastWriteAt ?? 0) - (a.lastWriteAt ?? 0));
-					const wsHead = document.createElement("div");
-					wsHead.className = "trk2-wsHead";
-					const wsName = document.createElement("span");
-					wsName.textContent = `${slug} \u00b7 ${boards.length}`;
-					const wsPath = document.createElement("span");
-					wsPath.className = "trk2-wsPath";
-					wsPath.textContent = boards[0]?.cwd ?? "";
-					wsHead.append(wsName, wsPath);
-					body.append(wsHead);
-					for (const board of boards) body.append(renderBoard(board));
+				for (const [slug, list] of byWorkspace) {
+					list.sort((a, b) => (STATE_ORDER[boardState(a)] ?? 9) - (STATE_ORDER[boardState(b)] ?? 9) || (b.lastWriteAt ?? 0) - (a.lastWriteAt ?? 0));
+					groups.push({ slug: slug, boards: list, cwd: list[0] !== undefined ? list[0].cwd ?? "" : "" });
 				}
-				body.scrollTop = scroll;
-			};
-
-			const renderBoard = (board) => {
-				const wrap = document.createElement("div");
-				wrap.className = board.allDone === true ? "trk2-board trk2-boardAll" : "trk2-board";
-				const headEl = document.createElement("button");
-				headEl.type = "button";
-				headEl.className = "trk2-boardHead";
-				const state = boardState(board);
-				const st = document.createElement("span");
-				st.className = `trk2-st trk2-st${state.charAt(0).toUpperCase()}${state.slice(1)}`;
-				st.innerHTML = ST_SVGS[state] ?? ST_SVGS.offline;
-				st.title = tt(`tracks.state.${state}`);
-				headEl.append(st);
-				const blocked = board.rows.filter((row) => row.status === "blocked").length;
-				if (blocked > 0) {
-					const badge = document.createElement("span");
-					badge.className = "trk2-blockedBadge";
-					badge.innerHTML = WARN_SVG;
-					badge.title = `${blocked} ${tt("tracks.blocked")}`;
-					headEl.append(badge);
-				}
-				const name = document.createElement("span");
-				name.className = "trk2-name";
-				const title2 = document.createElement("span");
-				title2.className = "trk2-title2";
-				title2.textContent = board.title ?? board.sessionId;
-				const meta = document.createElement("span");
-				meta.className = "trk2-meta";
-				const doneCount = board.rows.filter((row) => row.percent === 100).length;
-				const age = board.lastWriteAt !== null && board.lastWriteAt !== undefined ? `${relativeMinutes(board.lastWriteAt, Date.now())} ${tt("ago")}` : "\u2014";
-				meta.textContent = `r${board.revision} \u00b7 ${doneCount}/${board.rows.length} ${tt("rows")} \u00b7 ${age}`;
-				name.append(title2, meta);
-				headEl.append(name);
-				const pct = document.createElement("span");
-				pct.className = "trk2-pct";
-				pct.textContent = `${board.overallPercent}%`;
-				headEl.append(pct);
-
-				// Action group: Open / Play-Pause / Dismiss. Dismiss is a
-				// two-step confirm while open rows remain (color flips red).
-				const mini = (svg, label, onClick, extraClass) => {
-					const btn = document.createElement("button");
-					btn.type = "button";
-					btn.className = cx("trk2-mini", extraClass);
-					btn.innerHTML = svg;
-					btn.title = label;
-					btn.addEventListener("click", (event) => { event.stopPropagation(); onClick(btn); });
-					return btn;
-				};
-				const openBtn = mini(OPEN_SVG, tt("tracks.open"), () => { void openSession(board); });
-				const playBtn = mini(board.playMode === true ? PAUSE_SVG : PLAY_SVG, board.playMode === true ? tt("action.pause") : tt("action.play"), () => { void act(board, board.playMode === true ? "pause" : "play"); }, board.playMode === true ? "trk2-miniPlayOn" : undefined);
-				const openRows = board.rows.filter((row) => row.percent < 100).length;
-				let confirmTimer = null;
-				const dismissBtn = mini(CLOSE_SVG, tt("action.dismiss"), (btn) => {
-					if (openRows > 0 && btn.dataset.confirm !== "true") {
-						btn.dataset.confirm = "true";
-						btn.classList.add("trk2-miniConfirm");
-						btn.title = `${openRows} ${tt("tracks.confirmDismiss")}`;
-						confirmTimer = window.setTimeout(() => { btn.dataset.confirm = "false"; btn.classList.remove("trk2-miniConfirm"); btn.title = tt("action.dismiss"); }, 2600);
-						return;
-					}
-					if (confirmTimer !== null) window.clearTimeout(confirmTimer);
-					void act(board, "dismiss");
-				});
-				const chevron = document.createElement("span");
-				chevron.className = "trk2-chevron";
-				chevron.textContent = "\u203a";
-				headEl.append(openBtn, playBtn, dismissBtn, chevron);
-				headEl.addEventListener("click", () => {
-					wrap.classList.toggle("trk2-boardOpen");
-					if (wrap.classList.contains("trk2-boardOpen") === true) expandedBoards.add(board.sessionId);
-					else expandedBoards.delete(board.sessionId);
-				});
-				if (expandedBoards.has(board.sessionId) === true) wrap.classList.add("trk2-boardOpen");
-				const rowsEl = document.createElement("div");
-				rowsEl.className = "trk2-rows";
-				for (const row of board.rows) {
-					const rowEl = document.createElement("div");
-					rowEl.className = row.percent === 100 ? "trk2-row trk2-rowDone" : "trk2-row";
-					const rowSt = document.createElement("span");
-					rowSt.className = row.status === "active" ? "trk2-rowSt trk2-rowStActive" : row.status === "blocked" ? "trk2-rowSt trk2-rowStBlocked" : "trk2-rowSt";
-					rowSt.innerHTML = ROW_SVGS[row.status] ?? ROW_SVGS.pending;
-					rowSt.title = row.status;
-					rowEl.append(rowSt);
-					const rowLabel = document.createElement("span");
-					rowLabel.className = "trk2-rowLabel";
-					rowLabel.textContent = row.label;
-					rowLabel.title = row.label;
-					rowEl.append(rowLabel);
-					if (row.items !== null && row.items !== undefined) {
-						const items = document.createElement("span");
-						items.className = "trk2-status";
-						items.textContent = `${row.items.done}/${row.items.total}`;
-						rowEl.append(items);
-					}
-					const rowPct = document.createElement("span");
-					rowPct.className = "trk2-rowPct";
-					rowPct.textContent = `${row.percent}%`;
-					rowEl.append(rowPct);
-					if (row.percent < 100) {
-						const pursue = document.createElement("button");
-						pursue.type = "button";
-						pursue.className = "trk2-rowAct";
-						pursue.innerHTML = SEND_SVG;
-						pursue.title = `${tt("action.pursue")} \u2014 ${row.label}`;
-						pursue.addEventListener("click", () => { void act(board, "pursue", row.id); });
-						rowEl.append(pursue);
-					}
-					const noteBtn = document.createElement("button");
-					noteBtn.type = "button";
-					noteBtn.className = "trk2-rowAct";
-					noteBtn.innerHTML = NOTE_SVG;
-					noteBtn.title = tt("action.note.hint");
-					noteBtn.addEventListener("click", (event) => {
-						event.stopPropagation();
-						const existing = rowEl.nextElementSibling;
-						if (existing !== null && existing.classList.contains("trk2-noteRow")) { existing.remove(); return; }
-						const noteRow = document.createElement("div");
-						noteRow.className = "trk2-noteRow";
-						const input = document.createElement("input");
-						input.maxLength = 500;
-						input.placeholder = tt("note.placeholder");
-						input.spellcheck = false;
-						const send = document.createElement("button");
-						send.type = "button";
-						send.textContent = tt("note.send");
-						const submit = () => {
-							const text = input.value.trim();
-							noteRow.remove();
-							if (text !== "") void act(board, "note", row.id, text);
-						};
-						send.addEventListener("click", submit);
-						input.addEventListener("keydown", (keyEvent) => {
-							keyEvent.stopPropagation();
-							if (keyEvent.key === "Enter") submit();
-							if (keyEvent.key === "Escape") { keyEvent.preventDefault(); noteRow.remove(); }
-						});
-						noteRow.append(input, send);
-						rowEl.after(noteRow);
-						input.focus();
-					});
-					rowEl.append(noteBtn);
-					rowsEl.append(rowEl);
-				}
-				const actions = document.createElement("div");
-				actions.className = "trk2-actions";
-				const addButton = (label, kind) => {
-					const btn = document.createElement("button");
-					btn.type = "button";
-					btn.className = "trk2-act";
-					btn.textContent = label;
-					btn.addEventListener("click", () => { void act(board, kind); });
-					actions.append(btn);
-				};
-				addButton(tt("action.checkpoint"), "checkpoint-request");
-				addButton(tt("action.align"), "align");
-				addButton(tt("action.realign"), "realign");
-				if (board.allDone !== true) addButton(tt("action.scout"), "scout");
-				rowsEl.append(actions);
-				wrap.append(headEl, rowsEl);
-				return wrap;
-			};
-
-			const load = () => {
-				hint.textContent = tt("tracks.scanning");
-				fetchTracks().then((data) => {
-					render(data);
-				}).catch((cause) => { hint.textContent = `${tt("tracks.loadFailed")}: ${cause.message}`; });
-			};
-			load();
-			const autoRefresh = window.setInterval(() => { if (busy === false) load(); }, 12_000);
-			const innerClose = onClose;
-			onClose = () => { window.clearInterval(autoRefresh); innerClose(); };
-			// Hosted main-panel unmount stops the poller through this hook.
-			scrim.dispose = () => { window.clearInterval(autoRefresh); };
-			return scrim;
+			}
+			return (0, react_jsx_runtime.jsxs)("section", {
+				className: "trk2-page",
+				"aria-busy": scanning,
+				children: [
+					(0, react_jsx_runtime.jsxs)("header", {
+						className: "trk2-pageHead",
+						children: [
+							(0, react_jsx_runtime.jsxs)("div", {
+								children: [
+									(0, react_jsx_runtime.jsx)("h1", { className: "trk2-pageTitle", children: tt("tracks.title") }),
+									(0, react_jsx_runtime.jsx)("p", { className: "trk2-pageIntro", children: intro })
+								]
+							}),
+							(0, react_jsx_runtime.jsx)("div", {
+								className: "trk2-toolbar",
+								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+									label: tt("tracks.refresh"),
+									side: "bottom",
+									delayMs: 500,
+									focusDelayMs: 500,
+									portal: true,
+									disabled: scanning,
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+										variant: "ghost",
+										size: "sm",
+										className: "trk2-ibtn",
+										"aria-label": tt("tracks.refresh"),
+										"aria-busy": scanning,
+										disabled: scanning,
+										onClick: () => { loadRef.current(); },
+										children: scanning === true
+											? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "ongoing", size: 16 })
+											: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutlineRegular, { "aria-hidden": "true" })
+									})
+								})
+							})
+						]
+					}),
+					boards.length === 0 && scanning !== true && loadError === null
+						? (0, react_jsx_runtime.jsx)("p", { className: "trk2-empty", children: tt("tracks.empty") })
+						: null,
+					groups.map((group) => (0, react_jsx_runtime.jsxs)("section", {
+						className: "trk2-group",
+						children: [
+							(0, react_jsx_runtime.jsxs)("div", {
+								className: "trk2-groupHead",
+								children: [
+									(0, react_jsx_runtime.jsx)("h3", { className: "trk2-groupTitle", children: group.slug }),
+									(0, react_jsx_runtime.jsx)("span", { className: "trk2-groupCount", children: group.boards.length }),
+									group.cwd !== "" ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.PathLabel, { path: group.cwd, className: "trk2-groupPath" }) : null
+								]
+							}),
+							(0, react_jsx_runtime.jsx)("div", {
+								className: "trk2-boards",
+								children: group.boards.map((board) => (0, react_jsx_runtime.jsx)(BoardCard, {
+									board: board,
+									open: expanded.has(board.sessionId),
+									onToggle: () => toggleBoard(board.sessionId),
+									busy: busy,
+									act: act,
+									openSession: openSession
+								}, board.sessionId))
+							})
+						]
+					}, group.slug)),
+					status !== null
+						? (0, react_jsx_runtime.jsx)("p", {
+							className: cx("trk2-status", status.error === true && "trk2-statusError"),
+							role: status.error === true ? "alert" : undefined,
+							children: status.text
+						})
+						: null
+				]
+			});
 		}
 
 		//#region lib/panel-slot.js
@@ -1393,19 +1490,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 				dangerouslySetInnerHTML: { __html: ICON_PATHS },
 			});
 		}
-		function TracksMainPanel({ sessions }) {
-			return (0, react_jsx_runtime.jsx)("div", {
-				className: "trk2-main",
-				ref: (node) => {
-					if (node === null) return;
-					const panel = createTracksPanel(sessions, () => {});
-					panel.classList.add("trk2-hosted");
-					node.append(panel);
-					// React 19 ref cleanup: stops the 12s scanner on unmount.
-					return () => { panel.dispose?.(); };
-				},
-			});
-		}
+		/** The main slot renders the React page directly (wave 2 — the pure-DOM 		 * builder and its scrim/card chrome are gone; the page is the panel). */ 		function TracksMainPanel({ sessions }) { 			return (0, react_jsx_runtime.jsx)(TracksPage, { sessions: sessions }); 		}
 		//#endregion
 		
 
@@ -1450,3 +1535,4 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 		return module.exports;
 	}
 });
+
