@@ -470,13 +470,14 @@ Row records: rows may carry detail — a long-form record (<= 4000 chars: what i
 Track record: every mutation also lands at <workspace>/.dsh/tracking/<sessionId>.json (full board, checkpoints, decisions); prior sessions' records sit beside it — read them with file tools when resuming work or reconstructing project history.
 /track: the operator's forced ledger sync — it injects the full ledger plus this doctrine; re-derive from artifacts, correct the board, then continue. While a board is live, every user submit carries a compact board reminder; do not recite it to the user.`
 
-/** Message factory (dsh-llm shape, inlined zero-dep per design D8). Content is a block array — a plain string renders as per-character unknown blocks. */
+/** Message factory (dsh-llm shape, inlined zero-dep per design D8). Content is a block array — a plain string renders as per-character unknown blocks.
+ * Source kind is the v4 producer-owned form `plugin:<name>` (harness producerKind convention). The retired V3 wrapper `kind: 'plugin'` is a hard refusal at v4 admission ("format v4 message requires a producer-owned source kind") — it is converted only by V3→V4 log migration, never at runtime injection. */
 function createPluginMessage(text, form, summary) {
   return Object.freeze({
     id: randomUUID(),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'dsh-rich-tracking', form, summary },
+    source: { kind: 'plugin:dsh-rich-tracking', form, summary },
   })
 }
 
