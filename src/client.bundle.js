@@ -227,7 +227,7 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region lib/styles.css
-		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
+		const css = `.rt-root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);border-radius:12px;flex:none;margin:0 auto;overflow:hidden}
 .rt-list{scrollbar-width:none}
 .rt-list::-webkit-scrollbar{display:none;width:0;height:0}
 .rt-root,.rt-root *{box-sizing:border-box}
@@ -235,7 +235,7 @@ window.__ModuleLoader__.load({
 .rt-header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;padding:0 12px;display:flex}
 .rt-header:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px;border-radius:8px}
 .rt-disc{flex:none;width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--rt-fill-color) var(--rt-percent), var(--dsw-alias-interactive-bg-hover) 0);position:relative}
-.rt-disc:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--dsw-specific-tip)}
+.rt-disc:after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--dsw-alias-bg-layer-2)}
 .rt-title{color:var(--dsw-alias-label-primary);flex:none;font-size:13px;font-weight:500;line-height:24px}
 .rt-progress{min-width:0;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:auto;font-size:13px;font-weight:400;line-height:20px;overflow:hidden}
 .rt-chip{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);border-radius:6px;padding:0 6px;font-size:11px;line-height:16px;flex:none}
@@ -304,8 +304,8 @@ window.__ModuleLoader__.load({
 .rt-status{min-height:16px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;padding:0 12px}
 .rt-statusOk{color:var(--dsw-alias-state-success-primary)}
 .rt-statusError{color:var(--dsw-alias-state-error-primary)}
-.rt-scrim{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:24px}
-.rt-record{width:100%;max-width:720px;max-height:min(88vh,900px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.rt-scrim{position:fixed;inset:0;z-index:90;background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);display:flex;align-items:center;justify-content:center;padding:24px}
+.rt-record{width:100%;max-width:720px;max-height:min(88vh,900px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);border-radius:var(--dsw-radius-panel);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--dsw-elevation-prominent)}
 .rt-record,.rt-record *{box-sizing:border-box}
 .rt-recordHead{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .rt-recordTitle{flex:1;min-width:0;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:20px;overflow-wrap:anywhere}
@@ -960,8 +960,8 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 .trk2-entry:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .trk2-entryIcon{display:inline-flex;justify-content:center;align-items:center;width:24px;height:24px;flex:none;color:var(--dsw-alias-label-tertiary)}
 .trk2-entryLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trk2-scrim{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:24px}
-.trk2-card{width:100%;max-width:880px;max-height:min(92vh,1200px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-specific-tip);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.trk2-scrim{position:fixed;inset:0;z-index:90;background:var(--dsw-alias-bg-mask-1);backdrop-filter:var(--dsw-mask-blur);display:flex;align-items:center;justify-content:center;padding:24px}
+.trk2-card{width:100%;max-width:880px;max-height:min(92vh,1200px);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);border-radius:var(--dsw-radius-panel);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--dsw-elevation-prominent)}
 .trk2-card,.trk2-card *{box-sizing:border-box}
 .trk2-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .trk2-title{font-size:14px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);flex:none}
@@ -1021,10 +1021,17 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 .trk2-foot2{display:flex;align-items:center;border-top:1px solid var(--dsw-alias-border-l1);padding:6px 12px}
 .trk2-footStatus{flex:1;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trk2-empty{padding:24px 16px;color:var(--dsw-alias-label-tertiary);font-size:13px;text-align:center}
-/* Hosted main-panel mode (sidebar.panellist + main slots). */
-.trk2-main{height:100%;overflow:auto;box-sizing:border-box;background:var(--dsw-specific-sidebar-fill);padding:24px;display:flex;justify-content:center;align-items:flex-start}
-.trk2-main .trk2-scrim{position:static;z-index:auto;background:0 0;padding:0;display:flex;flex-direction:column;width:100%;max-width:880px;height:100%}
-.trk2-main .trk2-card{flex:1;min-height:0;max-height:none;box-shadow:none}
+/* Hosted main-panel mode (sidebar.panellist + main slots): native page
+   template (Plugins/Tasks family) — transparent page over the main column's
+   bg-base, 960px centered column, pageHead anatomy, no dialog-card chrome. */
+.trk2-main{height:100%;overflow:auto;box-sizing:border-box;padding:0 clamp(24px,4vw,48px) 48px;display:flex;justify-content:center;align-items:flex-start}
+.trk2-main .trk2-scrim{position:static;z-index:auto;background:0 0;backdrop-filter:none;padding:0;display:flex;flex-direction:column;width:100%;max-width:960px;height:100%}
+.trk2-main .trk2-card{flex:1;min-height:0;max-height:none;max-width:none;border:none;background:0 0;border-radius:0;box-shadow:none;gap:32px}
+.trk2-main .trk2-head{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px;align-items:start;padding:28px 0 0;border-bottom:none}
+[data-platform=darwin] .trk2-main .trk2-head{padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
+.trk2-main .trk2-title{grid-area:1 / 1 / 2 / 2;margin:0;font-size:20px;font-weight:500;line-height:28px;color:var(--dsw-alias-label-primary)}
+.trk2-main .trk2-hint{grid-area:2 / 1 / 3 / 2;margin:4px 0 0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
+.trk2-main .trk2-iconBtn{grid-area:1 / 2 / 2 / 3;justify-self:end}
 .trk2-main .trk2-closeBtn{display:none}`;
 
 		const tt = (key) => (/^zh/i.test(navigator.language ?? "") ? zh : en)[key] ?? en[key] ?? key;
@@ -1083,7 +1090,7 @@ const TRACKS_CSS = `.trk2-entry{appearance:none;box-sizing:border-box;display:fl
 			refreshBtn.addEventListener("click", () => load());
 			const closeBtn = document.createElement("button");
 			closeBtn.type = "button";
-			closeBtn.className = "trk2-iconBtn";
+			closeBtn.className = "trk2-iconBtn trk2-closeBtn";
 			closeBtn.textContent = "\u00d7";
 			closeBtn.title = tt("tracks.close");
 			closeBtn.addEventListener("click", () => onClose());

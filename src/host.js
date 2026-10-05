@@ -1169,8 +1169,8 @@ export function apply(ctx) {
   ctx.inject(['commands'], (commandCtx) => {
     commandCtx.commands.register({
       name: 'track',
-      description: 'Tracking ledger sync: injects the current board plus the tracking doctrine into the agent\'s next step',
-      input: { hint: '[message]' },
+      description: 'Sync the tracking board into the agent\'s next step',
+      input: { hint: '[<message>]' },
       handler: ({ agent, rawInput }) => {
         let state = null
         for (const event of trackingJournal(agent.session)) state = foldTracking(state, event)
