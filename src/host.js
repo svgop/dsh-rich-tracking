@@ -375,13 +375,19 @@ async function scanTracks(ctx, budgetMs = TRACKS_BUDGET_MS) {
   const startedAt = Date.now()
   const workspaces = []
   try {
-    for (const entry of readdirSync(SESSIONS_ROOT, { withFileTypes: true })) {
+    for (const entry of readdirSync(sessionsRoot(), { withFileTypes: true })) {
       if (entry.isDirectory() && entry.name.startsWith('--') && entry.name.endsWith('--')) workspaces.push(entry.name.slice(2, -2))
     }
-  } catch { return { boards: [], scanned: 0, total: 0, workspaces: [] } }
+  } catch (error) {
+    // A dead enumeration must never masquerade as "no boards": the 2643a58
+    // regression (a stale SESSIONS_ROOT reference throwing ReferenceError
+    // here) returned this exact empty shape while real boards sat on disk.
+    console.warn(`[dsh-rich-tracking] tracks scan could not enumerate the sessions root: ${error instanceof Error ? error.message : String(error)}`)
+    return { boards: [], scanned: 0, total: 0, workspaces: [] }
+  }
   const files = []
   for (const slugName of workspaces) {
-    const dir = join(SESSIONS_ROOT, `--${slugName}--`)
+    const dir = join(sessionsRoot(), `--${slugName}--`)
     try {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory() === false) continue
